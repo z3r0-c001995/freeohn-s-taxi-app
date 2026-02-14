@@ -62,4 +62,6 @@ npm run web:export:driver
 npm run web:deploy:driver
 ```
 
+Note: the export scripts clear Metro cache each run to prevent seeker/driver bundle mix-ups.
+
 Both deployed apps will then talk to the same live backend.
