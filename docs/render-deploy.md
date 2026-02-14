@@ -12,7 +12,7 @@ In Render dashboard:
 - New -> Web Service
 - Connect your GitHub repo
 - Use `render.yaml` from this repo (Blueprint) or set values manually:
-  - Build command: `npm ci && npm run build:server`
+  - Build command: `corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm run build:server`
   - Start command: `npm start`
 
 ## 3) Required environment variables
