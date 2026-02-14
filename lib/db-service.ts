@@ -1,4 +1,9 @@
-import { getDatabase } from "./db";
+import { ensureDatabaseInitialized, getDatabase } from "./db";
+
+async function getDb() {
+  await ensureDatabaseInitialized();
+  return getDatabase();
+}
 
 // ============ USER OPERATIONS ============
 
@@ -9,7 +14,7 @@ export async function createUser(
   loginMethod?: string,
   role: "rider" | "driver" | "admin" = "rider"
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   const userId = Date.now(); // Use timestamp as number ID
 
   await db.runAsync(
@@ -32,7 +37,7 @@ export async function createUser(
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   const result = await db.getFirstAsync(
     `SELECT * FROM users WHERE phone = ?`,
     [openId]
@@ -53,7 +58,7 @@ export async function getUserByOpenId(openId: string) {
 }
 
 export async function getUserById(id: string) {
-  const db = getDatabase();
+  const db = await getDb();
   const result = await db.getFirstAsync(
     `SELECT * FROM users WHERE id = ?`,
     [id]
@@ -82,7 +87,7 @@ export async function createDriverProfile(
   plateNumber: string,
   licenseNumber: string
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   const profileId = Date.now(); // Use timestamp as number ID
 
   await db.runAsync(
@@ -110,7 +115,7 @@ export async function createDriverProfile(
 }
 
 export async function getDriverProfile(userId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   const result = await db.getFirstAsync(
     `SELECT * FROM driver_profiles WHERE user_id = ?`,
     [userId]
@@ -140,7 +145,7 @@ export async function updateDriverLocation(
   latitude: number,
   longitude: number
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   await db.runAsync(
     `UPDATE driver_profiles SET current_latitude = ?, current_longitude = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
     [latitude, longitude, userId]
@@ -148,7 +153,7 @@ export async function updateDriverLocation(
 }
 
 export async function setDriverOnlineStatus(userId: string, isOnline: boolean) {
-  const db = getDatabase();
+  const db = await getDb();
   await db.runAsync(
     `UPDATE driver_profiles SET is_online = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
     [isOnline ? 1 : 0, userId]
@@ -156,7 +161,7 @@ export async function setDriverOnlineStatus(userId: string, isOnline: boolean) {
 }
 
 export async function getOnlineDrivers() {
-  const db = getDatabase();
+  const db = await getDb();
   const results = await db.getAllAsync(`
     SELECT dp.*, u.id as user_id, u.phone, u.name, u.email, u.role, u.created_at as user_created_at, u.updated_at as user_updated_at
     FROM driver_profiles dp
@@ -209,7 +214,7 @@ export async function createRide(
   durationSeconds?: number,
   encodedPolyline?: string
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   const rideId = Date.now(); // Use timestamp as number ID
 
   await db.runAsync(
@@ -246,7 +251,7 @@ export async function createRide(
 }
 
 export async function acceptRide(rideId: string, driverId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   await db.runAsync(
     `UPDATE rides SET driver_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     [driverId, "accepted", rideId]
@@ -254,7 +259,7 @@ export async function acceptRide(rideId: string, driverId: string) {
 }
 
 export async function startRide(rideId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   await db.runAsync(
     `UPDATE rides SET status = ?, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     ["in_progress", rideId]
@@ -262,7 +267,7 @@ export async function startRide(rideId: string) {
 }
 
 export async function completeRide(rideId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   await db.runAsync(
     `UPDATE rides SET status = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     ["completed", rideId]
@@ -270,7 +275,7 @@ export async function completeRide(rideId: string) {
 }
 
 export async function cancelRide(rideId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   await db.runAsync(
     `UPDATE rides SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     ["cancelled", rideId]
@@ -278,7 +283,7 @@ export async function cancelRide(rideId: string) {
 }
 
 export async function getRideById(rideId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   const result = await db.getFirstAsync(
     `SELECT * FROM rides WHERE id = ?`,
     [rideId]
@@ -311,7 +316,7 @@ export async function getRideById(rideId: string) {
 }
 
 export async function getActiveRidesForUser(userId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   const results = await db.getAllAsync(
     `SELECT * FROM rides
      WHERE (rider_id = ? OR driver_id = ?)
@@ -346,7 +351,7 @@ export async function getActiveRidesForUser(userId: string) {
 }
 
 export async function getAvailableRides() {
-  const db = getDatabase();
+  const db = await getDb();
   const results = await db.getAllAsync(
     `SELECT * FROM rides WHERE status = 'requested' ORDER BY created_at ASC`
   ) as any[];
@@ -428,7 +433,7 @@ export async function createMessage(
   receiverId: string,
   message: string
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   const messageId = Date.now(); // Use timestamp as number ID
 
   await db.runAsync(
@@ -454,7 +459,7 @@ export async function sendMessage(
   receiverId: string,
   message: string
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   const messageId = Date.now(); // Use timestamp as number ID
 
   await db.runAsync(
@@ -475,7 +480,7 @@ export async function sendMessage(
 }
 
 export async function getMessagesForRide(rideId: string) {
-  const db = getDatabase();
+  const db = await getDb();
   const results = await db.getAllAsync(
     `SELECT * FROM messages WHERE ride_id = ? ORDER BY created_at ASC`,
     [rideId]
@@ -501,7 +506,7 @@ export async function insertLocationHistory(
   heading: number,
   speed: number
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   const historyId = `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   await db.runAsync(
@@ -525,7 +530,7 @@ export async function getLocationHistory(
   userId: string,
   limit: number = 100
 ) {
-  const db = getDatabase();
+  const db = await getDb();
   const results = await db.getAllAsync(
     `SELECT * FROM location_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?`,
     [userId, limit]

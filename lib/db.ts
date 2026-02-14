@@ -4,22 +4,38 @@ import { APP_VARIANT } from "@/constants/app-variant";
 const DATABASE_NAME = "ridehaul.db";
 
 let db: SQLite.SQLiteDatabase | null = null;
+let dbInitPromise: Promise<void> | null = null;
 
 export async function initializeDatabase() {
-  try {
-    db = await SQLite.openDatabaseAsync(DATABASE_NAME);
-    await db.execAsync(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA foreign_keys = ON;
-    `);
-    await createTables();
-    await runMigrations();
-    await seedDriverAppDemoData();
-    console.log("Database initialized successfully");
-  } catch (error) {
-    console.error("Failed to initialize database:", error);
-    throw error;
+  if (db) {
+    return;
   }
+
+  if (dbInitPromise) {
+    return dbInitPromise;
+  }
+
+  dbInitPromise = (async () => {
+    try {
+      db = await SQLite.openDatabaseAsync(DATABASE_NAME);
+      await db.execAsync(`
+        PRAGMA journal_mode = WAL;
+        PRAGMA foreign_keys = ON;
+      `);
+      await createTables();
+      await runMigrations();
+      await seedDriverAppDemoData();
+      console.log("Database initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize database:", error);
+      db = null;
+      throw error;
+    } finally {
+      dbInitPromise = null;
+    }
+  })();
+
+  return dbInitPromise;
 }
 
 async function createTables() {
@@ -222,6 +238,17 @@ export function getDatabase() {
     throw new Error("Database not initialized. Call initializeDatabase first.");
   }
   return db;
+}
+
+export function isDatabaseInitialized() {
+  return db !== null;
+}
+
+export async function ensureDatabaseInitialized() {
+  if (db) {
+    return;
+  }
+  await initializeDatabase();
 }
 
 export async function closeDatabase() {
