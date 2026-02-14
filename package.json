@@ -36,10 +36,10 @@
     "android:dev:install": "./scripts/install-android-dev-variants.sh",
     "android:dev": "./scripts/dev-android.sh",
     "build:server": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "web:export:seeker": "cross-env APP_VARIANT=seeker EXPO_PUBLIC_APP_VARIANT=seeker npx expo export --platform web --output-dir dist-seeker",
-    "web:export:driver": "cross-env APP_VARIANT=driver EXPO_PUBLIC_APP_VARIANT=driver npx expo export --platform web --output-dir dist-driver",
-    "web:deploy:seeker": "cross-env APP_VARIANT=seeker EXPO_PUBLIC_APP_VARIANT=seeker npx eas-cli deploy --prod --export-dir dist-seeker",
-    "web:deploy:driver": "cross-env APP_VARIANT=driver EXPO_PUBLIC_APP_VARIANT=driver npx eas-cli deploy --prod --export-dir dist-driver",
+    "web:export:seeker": "APP_VARIANT=seeker EXPO_PUBLIC_APP_VARIANT=seeker npx expo export --platform web --output-dir dist-seeker",
+    "web:export:driver": "APP_VARIANT=driver EXPO_PUBLIC_APP_VARIANT=driver npx expo export --platform web --output-dir dist-driver",
+    "web:deploy:seeker": "APP_VARIANT=seeker EXPO_PUBLIC_APP_VARIANT=seeker npx eas-cli deploy --prod --export-dir dist-seeker",
+    "web:deploy:driver": "APP_VARIANT=driver EXPO_PUBLIC_APP_VARIANT=driver npx eas-cli deploy --prod --export-dir dist-driver",
     "web:deploy:both": "npm run web:export:seeker && npm run web:deploy:seeker && npm run web:export:driver && npm run web:deploy:driver"
   },
   "dependencies": {
