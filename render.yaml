@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: freeohn-api
+    runtime: node
+    plan: free
+    autoDeploy: true
+    buildCommand: npm ci && npm run build:server
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://freeohn-seeker.expo.app,https://freeohn-driver.expo.app,http://localhost:8081,http://localhost:8090"
+      - key: ALLOW_DEV_AUTH_HEADER
+        value: "1"
+      - key: OAUTH_SERVER_URL
+        sync: false
+      - key: VITE_APP_ID
+        sync: false
+      - key: OWNER_OPEN_ID
+        sync: false
