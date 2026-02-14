@@ -55,12 +55,11 @@ Replace with your Render URL:
 export API_BASE_URL="https://your-api.onrender.com"
 export EXPO_PUBLIC_API_BASE_URL="$API_BASE_URL"
 export EXPO_PUBLIC_OAUTH_SERVER_URL="$API_BASE_URL"
+npm run web:export:seeker
+npm run web:deploy:seeker
 
-APP_VARIANT=seeker EXPO_PUBLIC_APP_VARIANT=seeker npx expo export --platform web
-APP_VARIANT=seeker EXPO_PUBLIC_APP_VARIANT=seeker npx eas-cli deploy --prod
-
-APP_VARIANT=driver EXPO_PUBLIC_APP_VARIANT=driver npx expo export --platform web
-APP_VARIANT=driver EXPO_PUBLIC_APP_VARIANT=driver npx eas-cli deploy --prod
+npm run web:export:driver
+npm run web:deploy:driver
 ```
 
 Both deployed apps will then talk to the same live backend.
