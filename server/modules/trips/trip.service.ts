@@ -259,7 +259,8 @@ class TripService {
       completedAt: null,
       cancelledAt: null,
       cancelFee: 0,
-      pinRequired: rideConfig.enableTripStartPin,
+      // PIN start is intentionally disabled in current production flow.
+      pinRequired: false,
       pinExpiresAt: null,
       pinAttempts: 0,
     };
