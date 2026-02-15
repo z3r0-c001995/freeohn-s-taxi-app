@@ -367,36 +367,41 @@ class TripService {
     }
 
     if (trip.state === "PIN_VERIFICATION") {
-      const pinRecord = platformStore.getTripStartPin(tripId);
-      if (!pinRecord) {
-        throw new Error("PIN session not found");
-      }
-      if (new Date(pinRecord.expiresAt).getTime() < Date.now()) {
+      const shouldEnforcePin = trip.pinRequired && rideConfig.enableTripStartPin;
+      if (!shouldEnforcePin) {
         platformStore.deleteTripStartPin(tripId);
-        throw new Error("PIN expired");
-      }
-      if (!pin) {
-        throw new Error("PIN is required to start this trip");
-      }
+      } else {
+        const pinRecord = platformStore.getTripStartPin(tripId);
+        if (!pinRecord) {
+          throw new Error("PIN session not found");
+        }
+        if (new Date(pinRecord.expiresAt).getTime() < Date.now()) {
+          platformStore.deleteTripStartPin(tripId);
+          throw new Error("PIN expired");
+        }
+        if (!pin) {
+          throw new Error("PIN is required to start this trip");
+        }
 
-      const nextAttempts = pinRecord.attempts + 1;
-      if (nextAttempts > rideConfig.tripStartPinMaxAttempts) {
+        const nextAttempts = pinRecord.attempts + 1;
+        if (nextAttempts > rideConfig.tripStartPinMaxAttempts) {
+          platformStore.deleteTripStartPin(tripId);
+          throw new Error("PIN verification blocked due to too many attempts");
+        }
+
+        const providedHash = hashPin(pin);
+        if (!constantTimeEqual(providedHash, pinRecord.hash)) {
+          platformStore.saveTripStartPin({
+            ...pinRecord,
+            attempts: nextAttempts,
+          });
+          incrementMetric("trip.pin.failed");
+          throw new Error("Invalid PIN");
+        }
+
         platformStore.deleteTripStartPin(tripId);
-        throw new Error("PIN verification blocked due to too many attempts");
+        incrementMetric("trip.pin.success");
       }
-
-      const providedHash = hashPin(pin);
-      if (!constantTimeEqual(providedHash, pinRecord.hash)) {
-        platformStore.saveTripStartPin({
-          ...pinRecord,
-          attempts: nextAttempts,
-        });
-        incrementMetric("trip.pin.failed");
-        throw new Error("Invalid PIN");
-      }
-
-      platformStore.deleteTripStartPin(tripId);
-      incrementMetric("trip.pin.success");
     } else if (trip.state !== "DRIVER_ARRIVING") {
       throw new Error(`Cannot start trip in state ${trip.state}`);
     }

@@ -202,13 +202,9 @@ export default function DriverDashboardScreen() {
 
   const onStartTrip = async () => {
     if (!activeTrip?.id) return;
-    if (pinRequired && !startPin.trim()) {
-      Alert.alert("PIN required", "Ask the passenger for the 4-digit trip PIN.");
-      return;
-    }
     try {
       try {
-        await startTrip(activeTrip.id, { pin: pinRequired ? startPin.trim() : undefined });
+        await startTrip(activeTrip.id, { pin: startPin.trim() || undefined });
         setIsOfflineMode(false);
       } catch {
         await startLocalRide(activeTrip.id.toString());
