@@ -21,6 +21,21 @@ export default function ProfileSetupScreen() {
   const phone = (params.phone as string) || "";
   const role: "rider" = "rider";
 
+  function buildFallbackUser() {
+    const now = new Date();
+    return {
+      id: Date.now(),
+      openId: phone,
+      name: name.trim(),
+      email: email || null,
+      loginMethod: "phone",
+      role,
+      createdAt: now,
+      updatedAt: now,
+      lastSignedIn: now,
+    };
+  }
+
   const handleContinue = async () => {
     if (IS_DRIVER_APP) {
       Alert.alert(
@@ -38,8 +53,15 @@ export default function ProfileSetupScreen() {
 
     setIsLoading(true);
     try {
-      // Create user in database
-      const user = await createUser(phone, name, email || undefined, "phone", role);
+      let user: any;
+      try {
+        // Prefer local SQLite profile creation when available.
+        user = await createUser(phone, name, email || undefined, "phone", role);
+      } catch (dbError) {
+        // Web private browsing and restricted storage can block expo-sqlite.
+        console.warn("[auth] Falling back to in-memory profile creation.", dbError);
+        user = buildFallbackUser();
+      }
 
       // Update store
       setCurrentUser(user);
