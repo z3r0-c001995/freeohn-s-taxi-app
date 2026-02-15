@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, Alert, ScrollView, TextInput } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
+import { RideMap } from "@/components/maps/RideMap";
 import { useAppStore } from "@/lib/store";
 import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/use-colors";
 import { createRide } from "@/lib/db-service";
 import { createTrip, getNearbyDrivers } from "@/lib/ride-hailing-api";
 import { calculateFare } from "@/shared/constants/fare";
+import type { NearbyDriverMarker } from "@/lib/maps/map-types";
 
 type RideType = "standard" | "premium";
 
@@ -26,6 +28,7 @@ export default function RequestRideScreen() {
   const [distance, setDistance] = useState(0);
   const [fare, setFare] = useState(0);
   const [nearbyCount, setNearbyCount] = useState<number>(0);
+  const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
 
   useEffect(() => {
     if (currentLocation) {
@@ -79,10 +82,20 @@ export default function RequestRideScreen() {
         });
         if (!isCancelled) {
           setNearbyCount(response.drivers.length);
+          setNearbyDrivers(
+            response.drivers.map((driver) => ({
+              driverId: driver.driverId,
+              lat: driver.location.lat,
+              lng: driver.location.lng,
+              distanceMeters: driver.distanceMeters,
+              etaSeconds: driver.etaSeconds,
+            })),
+          );
         }
       } catch {
         if (!isCancelled) {
           setNearbyCount(0);
+          setNearbyDrivers([]);
         }
       }
     };
@@ -129,12 +142,7 @@ export default function RequestRideScreen() {
           idempotencyKey,
         });
 
-        Alert.alert("Success", "Ride requested! Finding nearby drivers...", [
-          {
-            text: "Track Trip",
-            onPress: () => router.replace(`/trip/${trip.id}` as never),
-          },
-        ]);
+        router.replace(`/trip/${trip.id}` as never);
         return;
       } catch (apiError) {
         console.warn("[request-ride.web] Remote trip creation failed, falling back to local mode.", apiError);
@@ -155,8 +163,8 @@ export default function RequestRideScreen() {
       );
 
       setActiveRide(ride);
-      Alert.alert("Success", "Ride requested in offline mode.");
-      router.back();
+      Alert.alert("Ride requested in offline mode", "Opening trip tracker.");
+      router.replace(`/trip/${ride.id}` as never);
     } catch (error) {
       console.error("[request-ride.web] Failed to request ride:", error);
       Alert.alert("Error", error instanceof Error ? error.message : "Failed to request ride. Please try again.");
@@ -165,6 +173,19 @@ export default function RequestRideScreen() {
     }
   };
 
+  const parsedPickupLat = parseFloat(pickupLat);
+  const parsedPickupLng = parseFloat(pickupLng);
+  const parsedDropoffLat = parseFloat(dropoffLat);
+  const parsedDropoffLng = parseFloat(dropoffLng);
+  const pickupLocation =
+    Number.isFinite(parsedPickupLat) && Number.isFinite(parsedPickupLng)
+      ? { lat: parsedPickupLat, lng: parsedPickupLng }
+      : undefined;
+  const dropoffLocation =
+    Number.isFinite(parsedDropoffLat) && Number.isFinite(parsedDropoffLng)
+      ? { lat: parsedDropoffLat, lng: parsedDropoffLng }
+      : undefined;
+
   return (
     <ScreenContainer>
       <ScrollView className="flex-1">
@@ -172,6 +193,22 @@ export default function RequestRideScreen() {
           <Text className="text-2xl font-bold mb-6" style={{ color: colors.text }}>
             Request a Ride (Web)
           </Text>
+
+          <View className="mb-4">
+            <Text className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
+              Live Map
+            </Text>
+            <RideMap
+              userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+              pickupLocation={pickupLocation}
+              dropoffLocation={dropoffLocation}
+              nearbyDrivers={nearbyDrivers}
+              style={{ height: 280 }}
+            />
+            <Text className="text-xs mt-2" style={{ color: colors.text }}>
+              Map shows pickup, dropoff, and nearby drivers in real time.
+            </Text>
+          </View>
 
           {/* Pickup Location */}
           <View className="mb-4">

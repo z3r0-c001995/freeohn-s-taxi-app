@@ -3,6 +3,7 @@ import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from "reac
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
+import { RideMap } from "@/components/maps/RideMap";
 import { useColors } from "@/hooks/use-colors";
 import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useAppStore } from "@/lib/store";
@@ -100,6 +101,22 @@ export default function DriverDashboardScreen() {
   }, [currentUser, loadDashboard, router]);
 
   const activeTrip = useMemo(() => dashboard?.activeTrips?.[0] ?? null, [dashboard?.activeTrips]);
+  const pickupLocation = useMemo(() => {
+    if (!activeTrip) return undefined;
+    const lat = Number(activeTrip.pickup?.lat ?? activeTrip.pickupLat);
+    const lng = Number(activeTrip.pickup?.lng ?? activeTrip.pickupLng);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
+  }, [activeTrip]);
+  const dropoffLocation = useMemo(() => {
+    if (!activeTrip) return undefined;
+    const lat = Number(activeTrip.dropoff?.lat ?? activeTrip.dropoffLat);
+    const lng = Number(activeTrip.dropoff?.lng ?? activeTrip.dropoffLng);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
+  }, [activeTrip]);
+  const canMarkArrived = activeTrip?.state === "DRIVER_ASSIGNED";
+  const pinRequired = activeTrip?.state === "PIN_VERIFICATION";
+  const canStartTrip = activeTrip?.state === "DRIVER_ARRIVING" || pinRequired;
+  const canCompleteTrip = activeTrip?.state === "IN_PROGRESS";
 
   const toggleOnline = async () => {
     try {
@@ -185,9 +202,13 @@ export default function DriverDashboardScreen() {
 
   const onStartTrip = async () => {
     if (!activeTrip?.id) return;
+    if (pinRequired && !startPin.trim()) {
+      Alert.alert("PIN required", "Ask the passenger for the 4-digit trip PIN.");
+      return;
+    }
     try {
       try {
-        await startTrip(activeTrip.id, { pin: startPin || undefined });
+        await startTrip(activeTrip.id, { pin: pinRequired ? startPin.trim() : undefined });
         setIsOfflineMode(false);
       } catch {
         await startLocalRide(activeTrip.id.toString());
@@ -246,6 +267,20 @@ export default function DriverDashboardScreen() {
             <Text className="text-xs text-muted">Driver location: {gpsLabel}</Text>
             <Text className="text-xs text-muted">Realtime tracking: {isTracking ? "active (2-5s)" : "inactive"}</Text>
             <Text className="text-xs text-muted">Pending clients nearby: {(dashboard?.pendingRequests ?? []).length}</Text>
+          </View>
+
+          <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
+            <RideMap
+              userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+              pickupLocation={pickupLocation}
+              dropoffLocation={dropoffLocation}
+              style={{ height: 220 }}
+            />
+            <View className="px-4 py-3">
+              <Text className="text-xs text-muted">
+                Live map: your position (blue), pickup (green), dropoff (red).
+              </Text>
+            </View>
           </View>
 
           <View className="rounded-xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
@@ -312,39 +347,47 @@ export default function DriverDashboardScreen() {
                 Fare snapshot: {activeTrip.fare?.currency ?? "USD"} {activeTrip.fare?.total?.toFixed?.(2) ?? "--"}
               </Text>
 
-              <TouchableOpacity
-                onPress={onArrived}
-                className="py-3 rounded-lg items-center justify-center"
-                style={{ backgroundColor: colors.primary }}
-              >
-                <Text className="text-white font-semibold">Mark Arrived</Text>
-              </TouchableOpacity>
+              {canMarkArrived && (
+                <TouchableOpacity
+                  onPress={onArrived}
+                  className="py-3 rounded-lg items-center justify-center"
+                  style={{ backgroundColor: colors.primary }}
+                >
+                  <Text className="text-white font-semibold">Mark Arrived</Text>
+                </TouchableOpacity>
+              )}
 
-              <TextInput
-                value={startPin}
-                onChangeText={setStartPin}
-                placeholder="Enter passenger PIN (if required)"
-                placeholderTextColor={colors.muted}
-                className="border border-border rounded-lg px-3 py-2 text-foreground"
-                keyboardType="numeric"
-                maxLength={4}
-              />
+              {pinRequired && (
+                <TextInput
+                  value={startPin}
+                  onChangeText={setStartPin}
+                  placeholder="Enter passenger PIN"
+                  placeholderTextColor={colors.muted}
+                  className="border border-border rounded-lg px-3 py-2 text-foreground"
+                  keyboardType="numeric"
+                  maxLength={4}
+                />
+              )}
 
-              <TouchableOpacity
-                onPress={onStartTrip}
-                className="py-3 rounded-lg items-center justify-center"
-                style={{ backgroundColor: colors.primary }}
-              >
-                <Text className="text-white font-semibold">Start Trip</Text>
-              </TouchableOpacity>
+              {canStartTrip && (
+                <TouchableOpacity
+                  onPress={onStartTrip}
+                  className="py-3 rounded-lg items-center justify-center"
+                  style={{ backgroundColor: colors.primary }}
+                >
+                  <Text className="text-white font-semibold">Start Trip</Text>
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
-                onPress={onCompleteTrip}
-                className="py-3 rounded-lg items-center justify-center"
-                style={{ backgroundColor: colors.success }}
-              >
-                <Text className="text-white font-semibold">Complete Trip</Text>
-              </TouchableOpacity>
+              {canCompleteTrip && (
+                <TouchableOpacity
+                  onPress={onCompleteTrip}
+                  className="py-3 rounded-lg items-center justify-center"
+                  style={{ backgroundColor: colors.success }}
+                >
+                  <Text className="text-white font-semibold">Complete Trip</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 

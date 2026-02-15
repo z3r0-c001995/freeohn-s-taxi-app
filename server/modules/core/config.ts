@@ -21,7 +21,7 @@ export const rideConfig: RideHailingConfig = {
   driverLocationMaxSpeedKmh: numberFromEnv("DRIVER_LOCATION_MAX_SPEED_KMH", 180),
   driverLocationMaxJumpMeters: numberFromEnv("DRIVER_LOCATION_MAX_JUMP_METERS", 2_000),
   driverLocationMaxJumpWindowMs: numberFromEnv("DRIVER_LOCATION_MAX_JUMP_WINDOW_MS", 12_000),
-  enableTripStartPin: boolFromEnv("FEATURE_TRIP_START_PIN", true),
+  enableTripStartPin: boolFromEnv("FEATURE_TRIP_START_PIN", false),
   tripStartPinTtlMs: numberFromEnv("TRIP_START_PIN_TTL_MS", 5 * 60_000),
   tripStartPinMaxAttempts: numberFromEnv("TRIP_START_PIN_MAX_ATTEMPTS", 5),
   tripShareTokenTtlMs: numberFromEnv("TRIP_SHARE_TOKEN_TTL_MS", 6 * 60 * 60_000),

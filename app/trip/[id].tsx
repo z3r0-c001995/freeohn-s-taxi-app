@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,6 +16,7 @@ export default function TripDetailsScreen() {
   const [rating, setRating] = useState("5");
   const [feedback, setFeedback] = useState("");
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [matchingElapsedSec, setMatchingElapsedSec] = useState(0);
 
   const canCancel = useMemo(() => {
     if (!trip?.state) return false;
@@ -27,6 +28,29 @@ export default function TripDetailsScreen() {
       "PIN_VERIFICATION",
     ].includes(trip.state);
   }, [trip?.state]);
+  const isMatchingState = trip?.state === "CREATED" || trip?.state === "MATCHING";
+
+  useEffect(() => {
+    if (!trip?.createdAt || !isMatchingState) {
+      setMatchingElapsedSec(0);
+      return;
+    }
+    const start = new Date(trip.createdAt).getTime();
+    const update = () => {
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.floor((now - start) / 1000));
+      setMatchingElapsedSec(elapsed);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [trip?.createdAt, isMatchingState]);
+
+  const matchingCounterLabel = useMemo(() => {
+    const minutes = Math.floor(matchingElapsedSec / 60);
+    const seconds = matchingElapsedSec % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }, [matchingElapsedSec]);
 
   const pickupLocation = trip?.pickup
     ? { lat: Number(trip.pickup.lat), lng: Number(trip.pickup.lng) }
@@ -130,6 +154,19 @@ export default function TripDetailsScreen() {
               Realtime: {transport === "websocket" ? "WebSocket" : transport === "sse" ? "SSE fallback" : "Polling"}
             </Text>
           </View>
+
+          {isMatchingState && (
+            <View className="rounded-xl p-4" style={{ backgroundColor: colors.surface }}>
+              <Text className="text-lg font-semibold text-foreground">Finding nearby drivers...</Text>
+              <Text className="text-sm text-muted mt-1">
+                Stay on this screen while dispatch sends offers to online drivers.
+              </Text>
+              <Text className="text-3xl font-bold mt-3" style={{ color: colors.primary }}>
+                {matchingCounterLabel}
+              </Text>
+              <Text className="text-xs text-muted mt-1">Matching timer</Text>
+            </View>
+          )}
 
           {(pickupLocation || dropoffLocation) && (
             <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>

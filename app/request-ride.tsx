@@ -294,12 +294,10 @@ export default function RequestRideScreen() {
         );
       }
 
-      Alert.alert("Success", usedOfflineMode ? "Ride requested (offline mode)." : "Ride requested! Finding nearby drivers...", [
-        {
-          text: "Track Trip",
-          onPress: () => router.replace(`/trip/${trip.id}` as never),
-        },
-      ]);
+      if (usedOfflineMode) {
+        Alert.alert("Ride requested (offline mode)", "Opening trip tracker.");
+      }
+      router.replace(`/trip/${trip.id}` as never);
     } catch (error) {
       console.error("Failed to request ride:", error);
       Alert.alert("Error", "Failed to request ride");

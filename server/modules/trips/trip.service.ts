@@ -337,7 +337,7 @@ class TripService {
       reason: "Driver arrived at pickup",
     });
 
-    if (rideConfig.enableTripStartPin) {
+    if (trip.pinRequired) {
       const plaintextPin = createNumericPin(4);
       platformStore.saveTripStartPin({
         tripId,
