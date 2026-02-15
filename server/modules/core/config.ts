@@ -17,6 +17,10 @@ export const rideConfig: RideHailingConfig = {
   dispatchRadiusKm: numberFromEnv("DISPATCH_RADIUS_KM", 10),
   offerTimeoutMs: numberFromEnv("DISPATCH_OFFER_TIMEOUT_MS", 15_000),
   maxDriverCandidates: numberFromEnv("DISPATCH_MAX_CANDIDATES", 10),
+  driverStaleAfterMs: numberFromEnv("DRIVER_STALE_AFTER_MS", 15_000),
+  driverLocationMaxSpeedKmh: numberFromEnv("DRIVER_LOCATION_MAX_SPEED_KMH", 180),
+  driverLocationMaxJumpMeters: numberFromEnv("DRIVER_LOCATION_MAX_JUMP_METERS", 2_000),
+  driverLocationMaxJumpWindowMs: numberFromEnv("DRIVER_LOCATION_MAX_JUMP_WINDOW_MS", 12_000),
   enableTripStartPin: boolFromEnv("FEATURE_TRIP_START_PIN", true),
   tripStartPinTtlMs: numberFromEnv("TRIP_START_PIN_TTL_MS", 5 * 60_000),
   tripStartPinMaxAttempts: numberFromEnv("TRIP_START_PIN_MAX_ATTEMPTS", 5),
@@ -31,4 +35,3 @@ export const supportConfig = {
   phone: process.env.SUPPORT_PHONE || "+1-800-000-0000",
   emergencyPhone: process.env.EMERGENCY_PHONE || "+911",
 };
-

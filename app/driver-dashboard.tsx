@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useAppStore } from "@/lib/store";
 import {
   acceptDriverRequest,
@@ -35,6 +36,7 @@ export default function DriverDashboardScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [startPin, setStartPin] = useState("");
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const { isTracking } = useLocationTracking();
   const now = new Date();
   const dateLabel = now.toLocaleDateString([], {
     weekday: "short",
@@ -76,7 +78,7 @@ export default function DriverDashboardScreen() {
       setDashboard(result);
       setIsOnline(Boolean(result?.status?.isOnline));
       setIsOfflineMode(false);
-    } catch (error) {
+    } catch {
       await loadDashboardLocal();
       setIsOfflineMode(true);
     }
@@ -242,6 +244,7 @@ export default function DriverDashboardScreen() {
           <View className="rounded-xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
             <Text className="text-base font-semibold text-foreground">Live GPS tracking details</Text>
             <Text className="text-xs text-muted">Driver location: {gpsLabel}</Text>
+            <Text className="text-xs text-muted">Realtime tracking: {isTracking ? "active (2-5s)" : "inactive"}</Text>
             <Text className="text-xs text-muted">Pending clients nearby: {(dashboard?.pendingRequests ?? []).length}</Text>
           </View>
 

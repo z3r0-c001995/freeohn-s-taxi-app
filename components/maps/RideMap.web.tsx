@@ -1,27 +1,65 @@
 import React, { useEffect, useRef } from "react";
 import { View } from "react-native";
+import maplibregl, { Map, Marker } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { RideMapProps } from "./RideMap.types";
 
-// Declare Google Maps types for web
-declare global {
-  interface Window {
-    google: any;
-  }
-}
+const DEFAULT_CENTER = { lat: -15.4162, lng: 28.3115 }; // Lusaka default
+const MAP_STYLE_URL = process.env.EXPO_PUBLIC_MAP_STYLE_URL || "https://demotiles.maplibre.org/style.json";
 
-const loadGoogleMapsScript = (onLoad: () => void) => {
-  if (window.google) {
-    onLoad();
-    return;
+const ROUTE_SOURCE_ID = "trip-route-source";
+const ROUTE_LAYER_ID = "trip-route-layer";
+
+const decodePolyline = (encoded: string): { lat: number; lng: number }[] => {
+  const points: { lat: number; lng: number }[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    const deltaLat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += deltaLat;
+
+    shift = 0;
+    result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    const deltaLng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += deltaLng;
+
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
   }
 
-  const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=geometry`;
-  script.async = true;
-  script.defer = true;
-  script.onload = onLoad;
-  document.head.appendChild(script);
+  return points;
 };
+
+function createMarker(color: string, heading?: number | null): HTMLElement {
+  const marker = document.createElement("div");
+  marker.style.width = "14px";
+  marker.style.height = "14px";
+  marker.style.borderRadius = "9999px";
+  marker.style.background = color;
+  marker.style.border = "2px solid #ffffff";
+  marker.style.boxShadow = "0 0 0 1px rgba(0,0,0,0.15)";
+  if (typeof heading === "number" && Number.isFinite(heading)) {
+    marker.style.transform = `rotate(${heading}deg)`;
+  }
+  return marker;
+}
 
 export function RideMap({
   userLocation,
@@ -33,134 +71,150 @@ export function RideMap({
   onDropoffSelect,
   style,
 }: RideMapProps) {
-  const mapRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<Map | null>(null);
+  const markersRef = useRef<Marker[]>([]);
 
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!containerRef.current || mapRef.current) return;
 
-    const initializeMap = () => {
-      if (!mapRef.current || !window.google) return;
+    const center = userLocation ?? pickupLocation ?? DEFAULT_CENTER;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE_URL,
+      center: [center.lng, center.lat],
+      zoom: 13,
+      attributionControl: {},
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
 
-      const map = new window.google.maps.Map(mapRef.current, {
-        center: userLocation ? { lat: userLocation.lat, lng: userLocation.lng } : { lat: -1.2864, lng: 36.8172 },
-        zoom: 15,
-        mapTypeId: window.google.maps.MapTypeId.ROADMAP,
-      });
+    map.on("click", (event) => {
+      const location = { lat: event.lngLat.lat, lng: event.lngLat.lng };
+      if (onPickupSelect && !pickupLocation) {
+        onPickupSelect(location);
+      } else if (onDropoffSelect) {
+        onDropoffSelect(location);
+      }
+    });
 
-      const addMarker = (position: { lat: number; lng: number }, options: any = {}) => {
-        new window.google.maps.Marker({
-          position,
-          map,
-          ...options,
-        });
-      };
+    mapRef.current = map;
+
+    return () => {
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current = [];
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [onDropoffSelect, onPickupSelect, pickupLocation, userLocation]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const render = () => {
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current = [];
+
+      const boundsPoints: [number, number][] = [];
 
       if (userLocation) {
-        addMarker(
-          { lat: userLocation.lat, lng: userLocation.lng },
-          {
-            title: "Your Location",
-            icon: {
-              url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="12" cy="12" r="8" fill="#3B82F6"/>
-                  <circle cx="12" cy="12" r="3" fill="white"/>
-                </svg>
-              `),
-              scaledSize: new window.google.maps.Size(24, 24),
-            },
-          }
+        markersRef.current.push(
+          new maplibregl.Marker({ element: createMarker("#1d4ed8") })
+            .setLngLat([userLocation.lng, userLocation.lat])
+            .addTo(map),
         );
+        boundsPoints.push([userLocation.lng, userLocation.lat]);
       }
 
       if (pickupLocation) {
-        addMarker(
-          { lat: pickupLocation.lat, lng: pickupLocation.lng },
-          {
-            title: "Pickup Location",
-            icon: {
-              url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#10B981"/>
-                </svg>
-              `),
-              scaledSize: new window.google.maps.Size(24, 24),
-            },
-          }
+        markersRef.current.push(
+          new maplibregl.Marker({ element: createMarker("#16a34a") })
+            .setLngLat([pickupLocation.lng, pickupLocation.lat])
+            .addTo(map),
         );
+        boundsPoints.push([pickupLocation.lng, pickupLocation.lat]);
       }
 
       if (dropoffLocation) {
-        addMarker(
-          { lat: dropoffLocation.lat, lng: dropoffLocation.lng },
-          {
-            title: "Dropoff Location",
-            icon: {
-              url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#EF4444"/>
-                </svg>
-              `),
-              scaledSize: new window.google.maps.Size(24, 24),
-            },
-          }
+        markersRef.current.push(
+          new maplibregl.Marker({ element: createMarker("#dc2626") })
+            .setLngLat([dropoffLocation.lng, dropoffLocation.lat])
+            .addTo(map),
         );
+        boundsPoints.push([dropoffLocation.lng, dropoffLocation.lat]);
       }
 
       nearbyDrivers.forEach((driver) => {
-        addMarker(
-          { lat: driver.lat, lng: driver.lng },
-          {
-            title: "Driver",
-            icon: {
-              url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="12" cy="12" r="8" fill="#2563EB"/>
-                </svg>
-              `),
-              scaledSize: new window.google.maps.Size(24, 24),
-            },
-          }
+        markersRef.current.push(
+          new maplibregl.Marker({ element: createMarker("#2563eb", driver.heading) })
+            .setLngLat([driver.lng, driver.lat])
+            .addTo(map),
         );
+        boundsPoints.push([driver.lng, driver.lat]);
       });
 
-      if (routePolyline) {
-        const decodedPath = window.google.maps.geometry.encoding.decodePath(routePolyline);
-        new window.google.maps.Polyline({
-          path: decodedPath,
-          geodesic: true,
-          strokeColor: "#3B82F6",
-          strokeOpacity: 1.0,
-          strokeWeight: 3,
-          map,
-        });
+      if (map.getLayer(ROUTE_LAYER_ID)) {
+        map.removeLayer(ROUTE_LAYER_ID);
+      }
+      if (map.getSource(ROUTE_SOURCE_ID)) {
+        map.removeSource(ROUTE_SOURCE_ID);
       }
 
-      map.addListener("click", (event: any) => {
-        const latLng = {
-          lat: event.latLng.lat(),
-          lng: event.latLng.lng(),
-        };
-        if (onPickupSelect && !pickupLocation) {
-          onPickupSelect(latLng);
-        } else if (onDropoffSelect) {
-          onDropoffSelect(latLng);
+      if (routePolyline) {
+        const points = decodePolyline(routePolyline);
+        if (points.length > 1) {
+          const routeCoordinates = points.map((point) => [point.lng, point.lat]);
+          map.addSource(ROUTE_SOURCE_ID, {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "LineString",
+                coordinates: routeCoordinates,
+              },
+            },
+          });
+          map.addLayer({
+            id: ROUTE_LAYER_ID,
+            type: "line",
+            source: ROUTE_SOURCE_ID,
+            paint: {
+              "line-color": "#2563eb",
+              "line-width": 4,
+            },
+          });
+          routeCoordinates.forEach((coord) => boundsPoints.push([coord[0], coord[1]]));
         }
-      });
+      }
+
+      if (boundsPoints.length > 1) {
+        const bounds = boundsPoints.reduce(
+          (acc, point) => acc.extend(point),
+          new maplibregl.LngLatBounds(boundsPoints[0], boundsPoints[0]),
+        );
+        map.fitBounds(bounds, { padding: 40, duration: 500 });
+      } else if (boundsPoints.length === 1) {
+        map.easeTo({ center: boundsPoints[0], zoom: 14, duration: 300 });
+      }
     };
 
-    loadGoogleMapsScript(initializeMap);
-  }, [userLocation, pickupLocation, dropoffLocation, routePolyline, nearbyDrivers, onPickupSelect, onDropoffSelect]);
+    if (map.isStyleLoaded()) {
+      render();
+    } else {
+      map.once("load", render);
+    }
+  }, [dropoffLocation, nearbyDrivers, pickupLocation, routePolyline, userLocation]);
 
   return (
     <View style={[{ height: 300 }, style]}>
       <div
-        ref={mapRef}
+        ref={containerRef}
         style={{
           width: "100%",
           height: "100%",
-          backgroundColor: "#f0f0f0",
           borderRadius: 8,
+          overflow: "hidden",
         }}
       />
     </View>

@@ -21,3 +21,7 @@ services:
         sync: false
       - key: OWNER_OPEN_ID
         sync: false
+      - key: ORS_API_KEY
+        sync: false
+      - key: ORS_BASE_URL
+        value: "https://api.openrouteservice.org"

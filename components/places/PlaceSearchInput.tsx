@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { View, TextInput, FlatList, TouchableOpacity, Text, Platform } from "react-native";
-import { useDebounce } from "../../hooks/use-debounce"; // Assume this hook exists or create it
+import { View, TextInput, FlatList, TouchableOpacity, Text } from "react-native";
+import { useDebounce } from "../../hooks/use-debounce";
 import { trpc } from "../../lib/trpc";
-import { PlaceAutocompletePrediction, PlaceDetails, LatLng } from "../../lib/google/google-types";
+import { PlaceAutocompletePrediction, PlaceDetails, LatLng } from "../../lib/maps/map-types";
 
 interface PlaceSearchInputProps {
   placeholder: string;
@@ -18,7 +18,7 @@ export function PlaceSearchInput({ placeholder, onPlaceSelect, userLocation, sty
 
   const debouncedQuery = useDebounce(query, 300);
 
-  const { data: autocompleteData, isLoading } = trpc.google.placesAutocomplete.useQuery(
+  const { data: autocompleteData, isLoading } = trpc.maps.placesAutocomplete.useQuery(
     {
       query: debouncedQuery,
       location: userLocation,
@@ -36,44 +36,15 @@ export function PlaceSearchInput({ placeholder, onPlaceSelect, userLocation, sty
   }, [autocompleteData]);
 
   const handleSelect = async (prediction: PlaceAutocompletePrediction) => {
-    try {
-      // TODO: Implement place details API call
-      // const details = await trpc.google.placeDetails.query({ placeId: prediction.place_id });
-      const details = {
-        place_id: prediction.place_id,
-        formatted_address: prediction.description,
-        geometry: { location: { lat: 0, lng: 0 } }
-      };
-      onPlaceSelect(details);
-      setQuery(details.formatted_address);
-      setShowResults(false);
-    } catch (error) {
-      console.error("Failed to get place details:", error);
-    }
+    const details: PlaceDetails = {
+      place_id: prediction.place_id,
+      formatted_address: prediction.formatted_address || prediction.description,
+      geometry: { location: prediction.geometry.location },
+    };
+    onPlaceSelect(details);
+    setQuery(details.formatted_address);
+    setShowResults(false);
   };
-
-  // For web, provide a simple input without autocomplete (or integrate Google Maps JS API later)
-  if (Platform.OS === "web") {
-    return (
-      <View style={style}>
-        <TextInput
-          placeholder={placeholder}
-          value={query}
-          onChangeText={setQuery}
-          style={{
-            borderWidth: 1,
-            borderColor: "#ccc",
-            borderRadius: 8,
-            padding: 12,
-            fontSize: 16,
-          }}
-        />
-        <Text style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-          Web version: Enter address manually (Google Maps integration coming soon)
-        </Text>
-      </View>
-    );
-  }
 
   return (
     <View style={style}>
@@ -126,6 +97,9 @@ export function PlaceSearchInput({ placeholder, onPlaceSelect, userLocation, sty
         />
       )}
       {isLoading && <Text style={{ padding: 8, color: "#666" }}>Searching...</Text>}
+      {!isLoading && debouncedQuery.length > 2 && predictions.length === 0 && (
+        <Text style={{ padding: 8, color: "#666" }}>No matches found</Text>
+      )}
     </View>
   );
 }

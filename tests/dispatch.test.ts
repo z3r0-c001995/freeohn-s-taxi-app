@@ -4,6 +4,8 @@ import { tripService } from "../server/modules/trips/trip.service";
 
 const riderUser = { id: 501, role: "rider" as const };
 const driverUser = { id: 701, role: "driver" as const };
+const staleDriverUser = { id: 702, role: "driver" as const };
+const freshDriverUser = { id: 703, role: "driver" as const };
 const ownerAdmin = { id: 1, role: "admin" as const };
 
 const baseTripPayload = {
@@ -76,5 +78,50 @@ describe("Dispatch service", () => {
     });
 
     expect(noDriverTrip.state).toBe("NO_DRIVER_FOUND");
+  });
+
+  it("skips stale drivers and offers trip to fresh nearby drivers", async () => {
+    const staleProfile = tripService.registerDriverByAdmin(ownerAdmin, staleDriverUser.id, {
+      vehicleMake: "Toyota",
+      vehicleModel: "Aqua",
+      vehicleColor: "Gray",
+      plateNumber: "STL001",
+      verified: true,
+    });
+    const freshProfile = tripService.registerDriverByAdmin(ownerAdmin, freshDriverUser.id, {
+      vehicleMake: "Honda",
+      vehicleModel: "Fit",
+      vehicleColor: "White",
+      plateNumber: "FRH001",
+      verified: true,
+    });
+    tripService.verifyDriver(staleProfile.driverId, true);
+    tripService.verifyDriver(freshProfile.driverId, true);
+
+    tripService.setDriverStatus(staleDriverUser, {
+      isOnline: true,
+      lat: -1.2865,
+      lng: 36.8173,
+    });
+    platformStore.setDriverStatus(staleProfile.driverId, {
+      lastSeenAt: new Date(Date.now() - 25_000).toISOString(),
+    });
+
+    tripService.setDriverStatus(freshDriverUser, {
+      isOnline: true,
+      lat: -1.2875,
+      lng: 36.8185,
+    });
+
+    const trip = await tripService.createTrip(riderUser, {
+      ...baseTripPayload,
+      idempotencyKey: "dispatch-stale-filter-1",
+    });
+
+    const freshOffer = await waitFor(() => tripService.listDriverRequests(freshDriverUser)[0] ?? null);
+    expect(freshOffer.tripId).toBe(trip.id);
+
+    expect(tripService.listDriverRequests(staleDriverUser)).toHaveLength(0);
+    expect(platformStore.getDriverStatus(staleProfile.driverId)?.isOnline).toBe(false);
   });
 });

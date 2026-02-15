@@ -1,6 +1,7 @@
 import type {
   CreateTripRequest,
   DriverStatusRequest,
+  NearbyDriversRequest,
   TripRecord,
   TripState,
   UserRole,
@@ -16,6 +17,7 @@ import { pricingService } from "../pricing/pricing.service";
 import { ratingsService } from "../ratings/ratings.service";
 import { rideConfig } from "../core/config";
 import { DispatchService } from "../dispatch/dispatch.service";
+import { haversineKm } from "../dispatch/geo";
 
 type TransitionActor = {
   actorId: string;
@@ -102,6 +104,77 @@ class TripService {
       fare,
       etaSeconds: input.durationSeconds,
       distanceMeters: input.distanceMeters,
+    };
+  }
+
+  listNearbyDrivers(user: AuthUser, input: NearbyDriversRequest) {
+    this.assertRole(user, ["rider", "admin"]);
+    const nowMs = Date.now();
+    const verifiedById = new Map(
+      platformStore
+        .listDrivers()
+        .filter((driver) => driver.verified)
+        .map((driver) => [driver.driverId, driver] as const),
+    );
+
+    const entries = platformStore
+      .listDriverStatusNear(input.pickup.lat, input.pickup.lng, input.radiusKm)
+      .map((status) => {
+        if (!status.isOnline || status.activeTripId) return null;
+        if (status.lat == null || status.lng == null) return null;
+
+        const profile = verifiedById.get(status.driverId);
+        if (!profile) return null;
+
+        const lastSeenAtMs = new Date(status.lastSeenAt).getTime();
+        const ageMs = Number.isFinite(lastSeenAtMs) ? nowMs - lastSeenAtMs : Number.POSITIVE_INFINITY;
+        if (ageMs > rideConfig.driverStaleAfterMs) {
+          this.markStaleDriverOffline(status.driverId, ageMs);
+          return null;
+        }
+
+        const distanceKm = haversineKm(input.pickup.lat, input.pickup.lng, status.lat, status.lng);
+        if (distanceKm > input.radiusKm) return null;
+
+        const etaSeconds = Math.max(60, Math.round((distanceKm / 35) * 3600));
+        return {
+          driverId: status.driverId,
+          location: {
+            lat: status.lat,
+            lng: status.lng,
+          },
+          rating: profile.rating,
+          vehicle: {
+            make: profile.vehicle.make,
+            model: profile.vehicle.model,
+            color: profile.vehicle.color,
+          },
+          distanceMeters: Math.round(distanceKm * 1000),
+          etaSeconds,
+          lastSeenAt: status.lastSeenAt,
+        };
+      })
+      .filter(
+        (
+          entry,
+        ): entry is {
+          driverId: string;
+          location: { lat: number; lng: number };
+          rating: number;
+          vehicle: { make: string; model: string; color: string };
+          distanceMeters: number;
+          etaSeconds: number;
+          lastSeenAt: string;
+        } => !!entry,
+      )
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)
+      .slice(0, input.limit);
+
+    return {
+      pickup: input.pickup,
+      radiusKm: input.radiusKm,
+      drivers: entries,
+      fetchedAt: new Date().toISOString(),
     };
   }
 
@@ -434,10 +507,15 @@ class TripService {
   ) {
     this.assertRole(user, ["driver", "admin"]);
     const profile = this.getRequiredDriverProfile(user.id);
+    const nowIso = new Date().toISOString();
+    const previousStatus = platformStore.getDriverStatus(profile.driverId);
+
+    this.assertLocationUpdatePlausible(profile.driverId, previousStatus, payload, nowIso);
+
     const status = platformStore.setDriverStatus(profile.driverId, {
       lat: payload.lat,
       lng: payload.lng,
-      lastSeenAt: new Date().toISOString(),
+      lastSeenAt: nowIso,
     });
 
     const tripId = payload.tripId ?? status.activeTripId;
@@ -458,7 +536,7 @@ class TripService {
         lng: payload.lng,
         heading: payload.heading ?? null,
         speed: payload.speed ?? null,
-        timestamp: new Date().toISOString(),
+        timestamp: nowIso,
       });
     }
 
@@ -514,6 +592,70 @@ class TripService {
       });
 
       return updated;
+    });
+  }
+
+  private assertLocationUpdatePlausible(
+    driverId: string,
+    previousStatus: { lat: number | null; lng: number | null; lastSeenAt: string } | null,
+    payload: { lat: number; lng: number; speed?: number },
+    nowIso: string,
+  ): void {
+    if (!previousStatus || previousStatus.lat == null || previousStatus.lng == null) {
+      return;
+    }
+
+    const previousTs = new Date(previousStatus.lastSeenAt).getTime();
+    const nextTs = new Date(nowIso).getTime();
+    if (!Number.isFinite(previousTs) || !Number.isFinite(nextTs) || nextTs <= previousTs) {
+      return;
+    }
+
+    const elapsedMs = nextTs - previousTs;
+    const distanceKm = haversineKm(previousStatus.lat, previousStatus.lng, payload.lat, payload.lng);
+    const distanceMeters = distanceKm * 1000;
+    const inferredSpeedKmh = (distanceKm * 3_600_000) / elapsedMs;
+    const reportedSpeedKmh = payload.speed != null ? payload.speed * 3.6 : null;
+
+    const exceedsSpeedGuard = inferredSpeedKmh > rideConfig.driverLocationMaxSpeedKmh;
+    const exceedsJumpGuard =
+      elapsedMs <= rideConfig.driverLocationMaxJumpWindowMs &&
+      distanceMeters > rideConfig.driverLocationMaxJumpMeters;
+    const exceedsReportedGuard =
+      reportedSpeedKmh != null && reportedSpeedKmh > rideConfig.driverLocationMaxSpeedKmh;
+    const exceedsSpeedWithLargeJump = exceedsSpeedGuard && exceedsJumpGuard;
+
+    if (!exceedsSpeedWithLargeJump && !exceedsReportedGuard) {
+      return;
+    }
+
+    incrementMetric("driver.location.rejected.spoof");
+    logger.warn("driver.location.rejected.spoof", {
+      driverId,
+      elapsedMs,
+      distanceMeters: Math.round(distanceMeters),
+      inferredSpeedKmh: Number(inferredSpeedKmh.toFixed(2)),
+      reportedSpeedKmh: reportedSpeedKmh != null ? Number(reportedSpeedKmh.toFixed(2)) : null,
+      maxSpeedKmh: rideConfig.driverLocationMaxSpeedKmh,
+      maxJumpMeters: rideConfig.driverLocationMaxJumpMeters,
+      maxJumpWindowMs: rideConfig.driverLocationMaxJumpWindowMs,
+    });
+
+    throw new Error("Suspicious location update rejected");
+  }
+
+  private markStaleDriverOffline(driverId: string, ageMs: number): void {
+    const status = platformStore.getDriverStatus(driverId);
+    if (!status || !status.isOnline || status.activeTripId) return;
+    platformStore.setDriverStatus(driverId, {
+      isOnline: false,
+      lastSeenAt: status.lastSeenAt,
+    });
+    incrementMetric("driver.presence.stale_offline");
+    logger.warn("trip.nearby.driver.stale.offline", {
+      driverId,
+      ageMs,
+      staleAfterMs: rideConfig.driverStaleAfterMs,
     });
   }
 

@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { createRideHailingRouter } from "../modules/http/ride-hailing.router";
+import { registerRealtimeGateway } from "../modules/location/socket.gateway";
 
 function parseCorsOrigins(raw: string | undefined): string[] {
   if (!raw) return [];
@@ -109,6 +110,8 @@ async function startServer() {
       createContext,
     }),
   );
+
+  registerRealtimeGateway(server, corsAllowList);
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);

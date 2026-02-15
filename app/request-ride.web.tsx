@@ -4,7 +4,8 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAppStore } from "@/lib/store";
 import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/use-colors";
-import { createRide, getOnlineDrivers } from "@/lib/db-service";
+import { createRide } from "@/lib/db-service";
+import { createTrip, getNearbyDrivers } from "@/lib/ride-hailing-api";
 import { calculateFare } from "@/shared/constants/fare";
 
 type RideType = "standard" | "premium";
@@ -12,7 +13,7 @@ type RideType = "standard" | "premium";
 export default function RequestRideScreen() {
   const router = useRouter();
   const colors = useColors();
-  const { currentUser, currentLocation, setActiveRide, setAvailableDrivers } = useAppStore();
+  const { currentUser, currentLocation, setActiveRide } = useAppStore();
 
   const [pickupLat, setPickupLat] = useState("");
   const [pickupLng, setPickupLng] = useState("");
@@ -24,6 +25,7 @@ export default function RequestRideScreen() {
   const [isRequesting, setIsRequesting] = useState(false);
   const [distance, setDistance] = useState(0);
   const [fare, setFare] = useState(0);
+  const [nearbyCount, setNearbyCount] = useState<number>(0);
 
   useEffect(() => {
     if (currentLocation) {
@@ -59,6 +61,43 @@ export default function RequestRideScreen() {
     }
   }, [pickupLat, pickupLng, dropoffLat, dropoffLng, rideType]);
 
+  useEffect(() => {
+    const pLat = parseFloat(pickupLat);
+    const pLng = parseFloat(pickupLng);
+    if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) {
+      setNearbyCount(0);
+      return;
+    }
+
+    let isCancelled = false;
+    const fetchNearby = async () => {
+      try {
+        const response = await getNearbyDrivers({
+          pickup: { lat: pLat, lng: pLng },
+          radiusKm: 6,
+          limit: 20,
+        });
+        if (!isCancelled) {
+          setNearbyCount(response.drivers.length);
+        }
+      } catch {
+        if (!isCancelled) {
+          setNearbyCount(0);
+        }
+      }
+    };
+
+    void fetchNearby();
+    const timer = setInterval(() => {
+      void fetchNearby();
+    }, 5000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(timer);
+    };
+  }, [pickupLat, pickupLng]);
+
   const handleRequestRide = async () => {
     const pLat = parseFloat(pickupLat);
     const pLng = parseFloat(pickupLng);
@@ -72,6 +111,35 @@ export default function RequestRideScreen() {
 
     try {
       setIsRequesting(true);
+      const distanceMeters = Number.isFinite(distance) ? Math.max(0, Math.round(distance * 1000)) : 0;
+      const durationSeconds =
+        distanceMeters > 0 ? Math.max(0, Math.round((distanceMeters / 1000 / 35) * 3600)) : 0;
+      const idempotencyKey = `trip_${Date.now()}_${currentUser.id}`;
+
+      try {
+        const trip = await createTrip({
+          pickup: { lat: pLat, lng: pLng },
+          dropoff: { lat: dLat, lng: dLng },
+          pickupAddress: pickupAddress || `${pLat}, ${pLng}`,
+          dropoffAddress: dropoffAddress || `${dLat}, ${dLng}`,
+          rideType,
+          distanceMeters,
+          durationSeconds,
+          paymentMethod: "CASH",
+          idempotencyKey,
+        });
+
+        Alert.alert("Success", "Ride requested! Finding nearby drivers...", [
+          {
+            text: "Track Trip",
+            onPress: () => router.replace(`/trip/${trip.id}` as never),
+          },
+        ]);
+        return;
+      } catch (apiError) {
+        console.warn("[request-ride.web] Remote trip creation failed, falling back to local mode.", apiError);
+      }
+
       const ride = await createRide(
         currentUser.id.toString(),
         pLat,
@@ -81,16 +149,17 @@ export default function RequestRideScreen() {
         pickupAddress || `${pLat}, ${pLng}`,
         dropoffAddress || `${dLat}, ${dLng}`,
         rideType,
-        fare
+        fare,
+        distanceMeters,
+        durationSeconds
       );
 
-      const drivers = await getOnlineDrivers();
-      setAvailableDrivers(drivers);
       setActiveRide(ride);
-      Alert.alert("Success", "Ride request sent to nearby drivers");
+      Alert.alert("Success", "Ride requested in offline mode.");
       router.back();
     } catch (error) {
-      Alert.alert("Error", "Failed to request ride. Please try again.");
+      console.error("[request-ride.web] Failed to request ride:", error);
+      Alert.alert("Error", error instanceof Error ? error.message : "Failed to request ride. Please try again.");
     } finally {
       setIsRequesting(false);
     }
@@ -208,6 +277,9 @@ export default function RequestRideScreen() {
               </Text>
               <Text className="text-sm" style={{ color: colors.text }}>
                 Distance: {distance.toFixed(2)} km
+              </Text>
+              <Text className="text-sm" style={{ color: colors.text }}>
+                Nearby drivers: {nearbyCount}
               </Text>
             </View>
           )}

@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { View, StyleSheet, Platform } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
-import { LatLng } from "../../lib/google/google-types";
+import { LatLng } from "../../lib/maps/map-types";
 import { RideMapProps } from "./RideMap.types";
 
 const decodePolyline = (encoded: string): LatLng[] => {
@@ -96,6 +96,7 @@ export function RideMap({
             coordinate={{ latitude: driver.lat, longitude: driver.lng }}
             title="Driver"
             pinColor="blue"
+            rotation={typeof driver.heading === "number" ? driver.heading : 0}
           />
         ))}
         {polylinePoints.length > 0 && (

@@ -78,6 +78,14 @@ export const driverLocationRequestSchema = z.object({
 
 export type DriverLocationRequest = z.infer<typeof driverLocationRequestSchema>;
 
+export const nearbyDriversRequestSchema = z.object({
+  pickup: locationPointSchema,
+  radiusKm: z.number().positive().max(25).default(6),
+  limit: z.number().int().positive().max(30).default(12),
+});
+
+export type NearbyDriversRequest = z.infer<typeof nearbyDriversRequestSchema>;
+
 export const tripRatingRequestSchema = z.object({
   score: z.number().int().min(1).max(5),
   feedback: z.string().trim().max(1000).optional(),
@@ -102,6 +110,10 @@ export const rideHailingConfigSchema = z.object({
   dispatchRadiusKm: z.number().positive(),
   offerTimeoutMs: z.number().int().positive(),
   maxDriverCandidates: z.number().int().positive(),
+  driverStaleAfterMs: z.number().int().positive(),
+  driverLocationMaxSpeedKmh: z.number().positive(),
+  driverLocationMaxJumpMeters: z.number().positive(),
+  driverLocationMaxJumpWindowMs: z.number().int().positive(),
   enableTripStartPin: z.boolean(),
   tripStartPinTtlMs: z.number().int().positive(),
   tripStartPinMaxAttempts: z.number().int().positive(),
@@ -182,4 +194,3 @@ export type TripEventRecord = {
   meta?: Record<string, unknown>;
   createdAt: string;
 };
-

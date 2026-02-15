@@ -3,6 +3,7 @@ import { Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } f
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
+import { RideMap } from "@/components/maps/RideMap";
 import { useColors } from "@/hooks/use-colors";
 import { useTripRealtime } from "@/hooks/use-trip-realtime";
 import { cancelTrip, rateTrip, sendSos, shareTrip } from "@/lib/ride-hailing-api";
@@ -11,7 +12,7 @@ export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const colors = useColors();
-  const { trip, isLoading } = useTripRealtime(id ?? null);
+  const { trip, driverLocation, isLoading, transport } = useTripRealtime(id ?? null);
   const [rating, setRating] = useState("5");
   const [feedback, setFeedback] = useState("");
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
@@ -26,6 +27,17 @@ export default function TripDetailsScreen() {
       "PIN_VERIFICATION",
     ].includes(trip.state);
   }, [trip?.state]);
+
+  const pickupLocation = trip?.pickup
+    ? { lat: Number(trip.pickup.lat), lng: Number(trip.pickup.lng) }
+    : undefined;
+  const dropoffLocation = trip?.dropoff
+    ? { lat: Number(trip.dropoff.lat), lng: Number(trip.dropoff.lng) }
+    : undefined;
+  const liveDriverMarker =
+    driverLocation && Number.isFinite(driverLocation.lat) && Number.isFinite(driverLocation.lng)
+      ? [{ lat: driverLocation.lat, lng: driverLocation.lng, heading: driverLocation.heading }]
+      : [];
 
   const handleCancel = async () => {
     if (!id) return;
@@ -114,7 +126,30 @@ export default function TripDetailsScreen() {
             <Text className="text-lg font-bold" style={{ color: colors.primary }}>
               {trip?.state ?? (isLoading ? "Loading..." : "Unknown")}
             </Text>
+            <Text className="text-xs text-muted mt-2">
+              Realtime: {transport === "websocket" ? "WebSocket" : transport === "sse" ? "SSE fallback" : "Polling"}
+            </Text>
           </View>
+
+          {(pickupLocation || dropoffLocation) && (
+            <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
+              <RideMap
+                userLocation={pickupLocation}
+                pickupLocation={pickupLocation}
+                dropoffLocation={dropoffLocation}
+                nearbyDrivers={liveDriverMarker}
+                style={{ height: 240 }}
+              />
+              <View className="px-4 py-3">
+                <Text className="text-xs text-muted">
+                  Driver GPS:{" "}
+                  {driverLocation
+                    ? `${driverLocation.lat.toFixed(5)}, ${driverLocation.lng.toFixed(5)}`
+                    : "Waiting for live updates"}
+                </Text>
+              </View>
+            </View>
+          )}
 
           <View className="rounded-xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
             <Text className="text-sm text-muted">Pickup</Text>

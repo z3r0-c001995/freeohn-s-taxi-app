@@ -142,21 +142,33 @@ export class DispatchService {
     pickupLng: number,
   ): { driverId: string; distanceKm: number } | null {
     const offeredDriverIds = new Set(platformStore.listDispatchOffersForTrip(tripId).map((offer) => offer.driverId));
+    const now = Date.now();
+    const verifiedDriverIds = new Set(
+      platformStore
+        .listDrivers()
+        .filter((driver) => driver.verified)
+        .map((driver) => driver.driverId),
+    );
 
     const eligible = platformStore
-      .listDrivers()
-      .filter((driver) => driver.verified)
-      .map((driver) => {
-        const status = platformStore.getDriverStatus(driver.driverId);
-        if (!status || !status.isOnline || status.activeTripId) return null;
+      .listDriverStatusNear(pickupLat, pickupLng, rideConfig.dispatchRadiusKm)
+      .map((status) => {
+        if (!verifiedDriverIds.has(status.driverId)) return null;
+        if (status.activeTripId) return null;
+        if (offeredDriverIds.has(status.driverId)) return null;
         if (status.lat == null || status.lng == null) return null;
 
         const distanceKm = haversineKm(pickupLat, pickupLng, status.lat, status.lng);
         if (distanceKm > rideConfig.dispatchRadiusKm) return null;
-        if (offeredDriverIds.has(driver.driverId)) return null;
+        const lastSeenAtMs = new Date(status.lastSeenAt).getTime();
+        const ageMs = Number.isFinite(lastSeenAtMs) ? now - lastSeenAtMs : Number.POSITIVE_INFINITY;
+        if (ageMs > rideConfig.driverStaleAfterMs) {
+          this.markDriverStale(status.driverId, ageMs);
+          return null;
+        }
 
         return {
-          driverId: driver.driverId,
+          driverId: status.driverId,
           distanceKm,
         };
       })
@@ -165,5 +177,21 @@ export class DispatchService {
       .slice(0, rideConfig.maxDriverCandidates);
 
     return eligible[0] ?? null;
+  }
+
+  private markDriverStale(driverId: string, ageMs: number): void {
+    const status = platformStore.getDriverStatus(driverId);
+    if (!status || !status.isOnline || status.activeTripId) return;
+
+    platformStore.setDriverStatus(driverId, {
+      isOnline: false,
+      lastSeenAt: status.lastSeenAt,
+    });
+    incrementMetric("driver.presence.stale_offline");
+    logger.warn("dispatch.driver.stale.offline", {
+      driverId,
+      ageMs,
+      staleAfterMs: rideConfig.driverStaleAfterMs,
+    });
   }
 }

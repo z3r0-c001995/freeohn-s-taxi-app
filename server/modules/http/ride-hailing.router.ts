@@ -5,6 +5,7 @@ import {
   driverLocationRequestSchema,
   driverStatusRequestSchema,
   fareEstimateRequestSchema,
+  nearbyDriversRequestSchema,
   tripCancelRequestSchema,
   tripRatingRequestSchema,
   tripStartRequestSchema,
@@ -83,6 +84,22 @@ export function createRideHailingRouter(): Router {
         const input = fareEstimateRequestSchema.parse(req.body);
         const estimate = tripService.estimateFare(input);
         res.json(estimate);
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+  );
+
+  router.post(
+    "/drivers/nearby",
+    requireRole("rider", "admin"),
+    createRateLimiter({ windowMs: 60_000, max: 60 }),
+    (req, res) => {
+      try {
+        const user = getAuthUser(req);
+        const input = nearbyDriversRequestSchema.parse(req.body);
+        const result = tripService.listNearbyDrivers(user, input);
+        res.json(result);
       } catch (error) {
         sendError(res, error);
       }
@@ -301,16 +318,21 @@ export function createRideHailingRouter(): Router {
     }
   });
 
-  router.post("/driver/location", requireRole("driver", "admin"), (req, res) => {
-    try {
-      const user = getAuthUser(req);
-      const payload = driverLocationRequestSchema.parse(req.body);
-      const result = tripService.updateDriverLocation(user, payload);
-      res.json(result);
-    } catch (error) {
-      sendError(res, error);
-    }
-  });
+  router.post(
+    "/driver/location",
+    requireRole("driver", "admin"),
+    createRateLimiter({ windowMs: 10_000, max: 12 }),
+    (req, res) => {
+      try {
+        const user = getAuthUser(req);
+        const payload = driverLocationRequestSchema.parse(req.body);
+        const result = tripService.updateDriverLocation(user, payload);
+        res.json(result);
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+  );
 
   router.post("/trips/:tripId/arrived", requireRole("driver", "admin"), async (req, res) => {
     try {

@@ -9,9 +9,9 @@ import { useColors } from "@/hooks/use-colors";
 import { Ionicons } from "@expo/vector-icons";
 import { trpc } from "@/lib/trpc";
 import { calculateFare } from "@/shared/constants/fare";
-import type { LatLng, RouteSummary, PlaceDetails } from "@/lib/google/google-types";
-import { createTrip, estimateTrip } from "@/lib/ride-hailing-api";
-import { createRide } from "@/lib/db-service";
+import type { LatLng, NearbyDriverMarker, RouteSummary, PlaceDetails } from "@/lib/maps/map-types";
+import { createTrip, estimateTrip, getNearbyDrivers } from "@/lib/ride-hailing-api";
+import { createRide, getOnlineDrivers } from "@/lib/db-service";
 import { calculateDistance } from "@/lib/ride-utils";
 import { IS_SEEKER_APP } from "@/constants/app-variant";
 
@@ -20,6 +20,7 @@ type RideType = "standard" | "premium";
 export default function RequestRideScreen() {
   const router = useRouter();
   const colors = useColors();
+  const trpcUtils = trpc.useUtils();
   const { currentUser, currentLocation } = useAppStore();
 
   const [pickupLocation, setPickupLocation] = useState<LatLng | null>(null);
@@ -36,6 +37,8 @@ export default function RequestRideScreen() {
     currency: string;
   } | null>(null);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
+  const [nearbyUpdatedAt, setNearbyUpdatedAt] = useState<string | null>(null);
   const [scheduleOption, setScheduleOption] = useState<"now" | "15min" | "30min">("now");
   const canRenderNativeMap =
     Platform.OS !== "android" || Boolean(process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY);
@@ -56,7 +59,7 @@ export default function RequestRideScreen() {
   }, [router]);
 
   // Calculate route when pickup and dropoff are set
-  const { data: routeData, isLoading: isCalculatingRoute } = trpc.google.computeRoute.useQuery(
+  const { data: routeData, isLoading: isCalculatingRoute } = trpc.maps.computeRoute.useQuery(
     {
       origin: pickupLocation!,
       destination: dropoffLocation!,
@@ -113,7 +116,7 @@ export default function RequestRideScreen() {
           etaSeconds: estimate.etaSeconds,
           currency: estimate.fare.currency,
         });
-      } catch (error) {
+      } catch {
         // fallback to local fare estimate if API estimate fails
         const fallbackTotal = calculateFare(
           routeSummary.distanceMeters / 1000,
@@ -131,6 +134,79 @@ export default function RequestRideScreen() {
     void fetchEstimate();
   }, [pickupLocation, dropoffLocation, routeSummary, rideType]);
 
+  useEffect(() => {
+    let isCancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const fetchNearby = async () => {
+      if (!pickupLocation || !IS_SEEKER_APP) {
+        if (!isCancelled) {
+          setNearbyDrivers([]);
+          setNearbyUpdatedAt(null);
+        }
+        return;
+      }
+
+      try {
+        const response = await getNearbyDrivers({
+          pickup: pickupLocation,
+          radiusKm: 6,
+          limit: 20,
+        });
+        if (isCancelled) return;
+
+        setNearbyDrivers(
+          response.drivers.map((driver) => ({
+            driverId: driver.driverId,
+            lat: driver.location.lat,
+            lng: driver.location.lng,
+            distanceMeters: driver.distanceMeters,
+            etaSeconds: driver.etaSeconds,
+          })),
+        );
+        setNearbyUpdatedAt(response.fetchedAt);
+      } catch {
+        if (!pickupLocation || isCancelled) return;
+
+        // Local fallback for standalone/offline mode.
+        const localDrivers = await getOnlineDrivers();
+        if (isCancelled) return;
+        const localMarkers = localDrivers
+          .map((driver) => {
+            const lat = Number(driver.currentLat);
+            const lng = Number(driver.currentLng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+            const distanceKm = calculateDistance(pickupLocation.lat, pickupLocation.lng, lat, lng);
+            if (distanceKm > 6) return null;
+            return {
+              driverId: String(driver.userId),
+              lat,
+              lng,
+              distanceMeters: Math.round(distanceKm * 1000),
+              etaSeconds: Math.max(60, Math.round((distanceKm / 35) * 3600)),
+            } satisfies NearbyDriverMarker;
+          })
+          .filter((driver): driver is NonNullable<typeof driver> => driver !== null)
+          .slice(0, 20);
+
+        setNearbyDrivers(localMarkers);
+        setNearbyUpdatedAt(new Date().toISOString());
+      }
+    };
+
+    void fetchNearby();
+    if (pickupLocation) {
+      timer = setInterval(() => {
+        void fetchNearby();
+      }, 5000);
+    }
+
+    return () => {
+      isCancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [pickupLocation, trpcUtils]);
+
   const handlePickupSelect = (place: PlaceDetails) => {
     setPickupLocation({ lat: place.geometry.location.lat, lng: place.geometry.location.lng });
     setPickupAddress(place.formatted_address);
@@ -139,6 +215,27 @@ export default function RequestRideScreen() {
   const handleDropoffSelect = (place: PlaceDetails) => {
     setDropoffLocation({ lat: place.geometry.location.lat, lng: place.geometry.location.lng });
     setDropoffAddress(place.formatted_address);
+  };
+
+  const resolveAddress = async (location: LatLng) => {
+    try {
+      const response = await trpcUtils.maps.reverseGeocode.fetch(location);
+      return response.address || `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+    } catch {
+      return `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+    }
+  };
+
+  const handlePickupMapSelect = async (location: LatLng) => {
+    setPickupLocation(location);
+    const address = await resolveAddress(location);
+    setPickupAddress(address);
+  };
+
+  const handleDropoffMapSelect = async (location: LatLng) => {
+    setDropoffLocation(location);
+    const address = await resolveAddress(location);
+    setDropoffAddress(address);
   };
 
   const handleRequestRide = async () => {
@@ -170,7 +267,7 @@ export default function RequestRideScreen() {
           paymentMethod: "CASH",
           idempotencyKey: `trip_${Date.now()}_${currentUser.id}`,
         });
-      } catch (apiError) {
+      } catch {
         // Standalone APK fallback: keep seeker flow working with local DB if backend is unreachable.
         usedOfflineMode = true;
         setIsOfflineMode(true);
@@ -244,8 +341,13 @@ export default function RequestRideScreen() {
                 pickupLocation={pickupLocation || undefined}
                 dropoffLocation={dropoffLocation || undefined}
                 routePolyline={routeSummary?.encodedPolyline}
-                onPickupSelect={(loc) => setPickupLocation(loc)}
-                onDropoffSelect={(loc) => setDropoffLocation(loc)}
+                nearbyDrivers={nearbyDrivers}
+                onPickupSelect={(loc) => {
+                  void handlePickupMapSelect(loc);
+                }}
+                onDropoffSelect={(loc) => {
+                  void handleDropoffMapSelect(loc);
+                }}
                 style={{ flex: 1 }}
               />
             ) : (
@@ -417,6 +519,20 @@ export default function RequestRideScreen() {
                   Duration: {Math.round(routeSummary.durationSeconds / 60)} min
                 </Text>
               </View>
+            </View>
+          )}
+
+          {pickupLocation && (
+            <View className="rounded-lg p-4 gap-1" style={{ backgroundColor: colors.surface }}>
+              <Text className="text-sm font-semibold text-foreground">Nearby Drivers</Text>
+              <Text className="text-xs text-muted">
+                {nearbyDrivers.length} online drivers within 6 km
+              </Text>
+              {nearbyUpdatedAt && (
+                <Text className="text-xs text-muted">
+                  Updated: {new Date(nearbyUpdatedAt).toLocaleTimeString()}
+                </Text>
+              )}
             </View>
           )}
 

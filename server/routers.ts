@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
-import { googleRouter } from "./routers/google.router";
+import { mapsRouter } from "./routers/maps.router";
 
 export const appRouter = router({
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -17,7 +17,9 @@ export const appRouter = router({
       } as const;
     }),
   }),
-  google: googleRouter,
+  maps: mapsRouter,
+  // Backward compatibility alias for legacy clients still calling trpc.google.*
+  google: mapsRouter,
 
   // TODO: add feature routers here, e.g.
   // todo: router({

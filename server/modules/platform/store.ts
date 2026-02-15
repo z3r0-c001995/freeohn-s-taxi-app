@@ -1,5 +1,12 @@
 import type { DriverProfileRecord, DriverStatusRecord, TripEventRecord, TripRecord, UserRole } from "../../../shared/ride-hailing";
 import { createId } from "../core/crypto";
+import {
+  boundsForRadius,
+  geoCell,
+  geoCellsForBounds,
+  isWithinBounds,
+  type GeoBounds,
+} from "../dispatch/geo";
 import type {
   DriverDispatchOffer,
   DriverRatingRecord,
@@ -26,6 +33,35 @@ class InMemoryRidePlatformStore {
   private readonly tripPins = new Map<string, TripStartPinRecord>();
   private readonly idempotency = new Map<string, IdempotencyEntry>();
   private readonly lockQueue = new Map<string, Promise<void>>();
+  private readonly driverGeoCellById = new Map<string, string>();
+  private readonly driverIdsByGeoCell = new Map<string, Set<string>>();
+
+  private removeDriverFromGeoIndex(driverId: string): void {
+    const currentCell = this.driverGeoCellById.get(driverId);
+    if (!currentCell) return;
+    const bucket = this.driverIdsByGeoCell.get(currentCell);
+    if (bucket) {
+      bucket.delete(driverId);
+      if (bucket.size === 0) {
+        this.driverIdsByGeoCell.delete(currentCell);
+      }
+    }
+    this.driverGeoCellById.delete(driverId);
+  }
+
+  private upsertDriverGeoIndex(status: DriverStatusRecord): void {
+    this.removeDriverFromGeoIndex(status.driverId);
+
+    if (!status.isOnline || status.lat == null || status.lng == null) {
+      return;
+    }
+
+    const nextCell = geoCell(status.lat, status.lng);
+    const bucket = this.driverIdsByGeoCell.get(nextCell) ?? new Set<string>();
+    bucket.add(status.driverId);
+    this.driverIdsByGeoCell.set(nextCell, bucket);
+    this.driverGeoCellById.set(status.driverId, nextCell);
+  }
 
   async withLock<T>(key: string, callback: () => Promise<T> | T): Promise<T> {
     const queue = this.lockQueue.get(key) ?? Promise.resolve();
@@ -89,6 +125,7 @@ class InMemoryRidePlatformStore {
       lastSeenAt: patch.lastSeenAt ?? new Date().toISOString(),
     };
     this.driverStatus.set(driverId, next);
+    this.upsertDriverGeoIndex(next);
     return next;
   }
 
@@ -98,6 +135,30 @@ class InMemoryRidePlatformStore {
 
   listDriverStatus(): DriverStatusRecord[] {
     return Array.from(this.driverStatus.values());
+  }
+
+  listDriverStatusInBounds(bounds: GeoBounds): DriverStatusRecord[] {
+    const cells = geoCellsForBounds(bounds);
+    const driverIds = new Set<string>();
+
+    for (const cell of cells) {
+      const bucket = this.driverIdsByGeoCell.get(cell);
+      if (!bucket) continue;
+      for (const driverId of bucket.values()) {
+        driverIds.add(driverId);
+      }
+    }
+
+    return Array.from(driverIds.values())
+      .map((driverId) => this.driverStatus.get(driverId) ?? null)
+      .filter((status): status is DriverStatusRecord => !!status)
+      .filter((status) => status.isOnline && status.lat != null && status.lng != null)
+      .filter((status) => isWithinBounds(status.lat as number, status.lng as number, bounds));
+  }
+
+  listDriverStatusNear(lat: number, lng: number, radiusKm: number): DriverStatusRecord[] {
+    const bounds = boundsForRadius(lat, lng, radiusKm);
+    return this.listDriverStatusInBounds(bounds);
   }
 
   createTrip(trip: TripRecord): TripRecord {
@@ -322,6 +383,8 @@ class InMemoryRidePlatformStore {
     this.tripPins.clear();
     this.idempotency.clear();
     this.lockQueue.clear();
+    this.driverGeoCellById.clear();
+    this.driverIdsByGeoCell.clear();
   }
 }
 

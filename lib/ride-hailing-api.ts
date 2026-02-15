@@ -1,10 +1,12 @@
 import { Platform } from "react-native";
 import { apiCall } from "./_core/api";
+import { getApiBaseUrl } from "@/constants/oauth";
 import type {
   CreateTripRequest,
   DriverLocationRequest,
   DriverStatusRequest,
   FareEstimateRequest,
+  NearbyDriversRequest,
   TripRatingRequest,
   TripStartRequest,
 } from "@/shared/ride-hailing";
@@ -129,11 +131,33 @@ export async function getDriverDashboard() {
   return apiCall<any>("/api/driver/dashboard");
 }
 
+export async function getNearbyDrivers(payload: NearbyDriversRequest) {
+  return apiCall<{
+    pickup: { lat: number; lng: number };
+    radiusKm: number;
+    drivers: Array<{
+      driverId: string;
+      location: { lat: number; lng: number };
+      rating: number;
+      vehicle: { make: string; model: string; color: string };
+      distanceMeters: number;
+      etaSeconds: number;
+      lastSeenAt: string;
+    }>;
+    fetchedAt: string;
+  }>("/api/drivers/nearby", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function createTripStream(tripId: string, onMessage: (event: any) => void): (() => void) | null {
   if (Platform.OS !== "web" || typeof EventSource === "undefined") {
     return null;
   }
-  const eventSource = new EventSource(`/api/stream/trips/${tripId}`, { withCredentials: true });
+  const baseUrl = getApiBaseUrl();
+  const streamUrl = `${baseUrl ? baseUrl.replace(/\/$/, "") : ""}/api/stream/trips/${tripId}`;
+  const eventSource = new EventSource(streamUrl, { withCredentials: true });
   eventSource.onmessage = (event) => {
     try {
       onMessage(JSON.parse(event.data));
