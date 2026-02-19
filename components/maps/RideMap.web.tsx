@@ -3,6 +3,8 @@ import { View } from "react-native";
 import maplibregl, { Map, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RideMapProps } from "./RideMap.types";
+import { IS_DRIVER_APP } from "@/constants/app-variant";
+import { driverTheme, riderTheme } from "@/constants/design-system";
 
 const DEFAULT_CENTER = { lat: -15.4162, lng: 28.3115 }; // Lusaka default
 const MAP_STYLE_URL = process.env.EXPO_PUBLIC_MAP_STYLE_URL || "https://demotiles.maplibre.org/style.json";
@@ -49,12 +51,12 @@ const decodePolyline = (encoded: string): { lat: number; lng: number }[] => {
 
 function createMarker(color: string, heading?: number | null): HTMLElement {
   const marker = document.createElement("div");
-  marker.style.width = "14px";
-  marker.style.height = "14px";
+  marker.style.width = "16px";
+  marker.style.height = "16px";
   marker.style.borderRadius = "9999px";
   marker.style.background = color;
   marker.style.border = "2px solid #ffffff";
-  marker.style.boxShadow = "0 0 0 1px rgba(0,0,0,0.15)";
+  marker.style.boxShadow = "0 4px 10px rgba(0,0,0,0.22)";
   if (typeof heading === "number" && Number.isFinite(heading)) {
     marker.style.transform = `rotate(${heading}deg)`;
   }
@@ -71,6 +73,7 @@ export function RideMap({
   onDropoffSelect,
   style,
 }: RideMapProps) {
+  const mapTheme = IS_DRIVER_APP ? driverTheme : riderTheme;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
@@ -119,7 +122,7 @@ export function RideMap({
 
       if (userLocation) {
         markersRef.current.push(
-          new maplibregl.Marker({ element: createMarker("#1d4ed8") })
+          new maplibregl.Marker({ element: createMarker(mapTheme.mapUser) })
             .setLngLat([userLocation.lng, userLocation.lat])
             .addTo(map),
         );
@@ -128,7 +131,7 @@ export function RideMap({
 
       if (pickupLocation) {
         markersRef.current.push(
-          new maplibregl.Marker({ element: createMarker("#16a34a") })
+          new maplibregl.Marker({ element: createMarker(mapTheme.mapPickup) })
             .setLngLat([pickupLocation.lng, pickupLocation.lat])
             .addTo(map),
         );
@@ -137,7 +140,7 @@ export function RideMap({
 
       if (dropoffLocation) {
         markersRef.current.push(
-          new maplibregl.Marker({ element: createMarker("#dc2626") })
+          new maplibregl.Marker({ element: createMarker(mapTheme.mapDropoff) })
             .setLngLat([dropoffLocation.lng, dropoffLocation.lat])
             .addTo(map),
         );
@@ -146,7 +149,7 @@ export function RideMap({
 
       nearbyDrivers.forEach((driver) => {
         markersRef.current.push(
-          new maplibregl.Marker({ element: createMarker("#2563eb", driver.heading) })
+          new maplibregl.Marker({ element: createMarker(mapTheme.mapDriver, driver.heading) })
             .setLngLat([driver.lng, driver.lat])
             .addTo(map),
         );
@@ -180,7 +183,7 @@ export function RideMap({
             type: "line",
             source: ROUTE_SOURCE_ID,
             paint: {
-              "line-color": "#2563eb",
+              "line-color": mapTheme.accent,
               "line-width": 4,
             },
           });
@@ -204,7 +207,7 @@ export function RideMap({
     } else {
       map.once("load", render);
     }
-  }, [dropoffLocation, nearbyDrivers, pickupLocation, routePolyline, userLocation]);
+  }, [dropoffLocation, mapTheme.accent, mapTheme.mapDriver, mapTheme.mapDropoff, mapTheme.mapPickup, mapTheme.mapUser, nearbyDrivers, pickupLocation, routePolyline, userLocation]);
 
   return (
     <View style={[{ height: 300 }, style]}>

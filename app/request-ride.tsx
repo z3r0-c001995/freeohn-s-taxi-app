@@ -1,26 +1,31 @@
-import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, Alert, ScrollView, Platform } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
 import { PlaceSearchInput } from "@/components/places/PlaceSearchInput";
-import { useAppStore } from "@/lib/store";
-import { useRouter } from "expo-router";
-import { useColors } from "@/hooks/use-colors";
-import { Ionicons } from "@expo/vector-icons";
+import { AppBadge } from "@/components/ui/app-badge";
+import { AppButton } from "@/components/ui/app-button";
+import { AppCard } from "@/components/ui/app-card";
+import { radii, shadows } from "@/constants/design-system";
+import { IS_SEEKER_APP } from "@/constants/app-variant";
+import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { trpc } from "@/lib/trpc";
-import { calculateFare } from "@/shared/constants/fare";
-import type { LatLng, NearbyDriverMarker, RouteSummary, PlaceDetails } from "@/lib/maps/map-types";
-import { createTrip, estimateTrip, getNearbyDrivers } from "@/lib/ride-hailing-api";
+import { useAppStore } from "@/lib/store";
 import { createRide, getOnlineDrivers } from "@/lib/db-service";
 import { calculateDistance } from "@/lib/ride-utils";
-import { IS_SEEKER_APP } from "@/constants/app-variant";
+import type { LatLng, NearbyDriverMarker, RouteSummary, PlaceDetails } from "@/lib/maps/map-types";
+import { createTrip, estimateTrip, getNearbyDrivers } from "@/lib/ride-hailing-api";
+import { calculateFare } from "@/shared/constants/fare";
 
 type RideType = "standard" | "premium";
 
 export default function RequestRideScreen() {
   const router = useRouter();
-  const colors = useColors();
   const trpcUtils = trpc.useUtils();
+  const brand = useBrandTheme();
   const { currentUser, currentLocation } = useAppStore();
 
   const [pickupLocation, setPickupLocation] = useState<LatLng | null>(null);
@@ -40,10 +45,10 @@ export default function RequestRideScreen() {
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
   const [nearbyUpdatedAt, setNearbyUpdatedAt] = useState<string | null>(null);
   const [scheduleOption, setScheduleOption] = useState<"now" | "15min" | "30min">("now");
+
   const canRenderNativeMap =
     Platform.OS !== "android" || Boolean(process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY);
 
-  // Set initial pickup to current location
   useEffect(() => {
     if (currentLocation && !pickupLocation) {
       setPickupLocation({ lat: currentLocation.latitude, lng: currentLocation.longitude });
@@ -58,8 +63,7 @@ export default function RequestRideScreen() {
     }
   }, [router]);
 
-  // Calculate route when pickup and dropoff are set
-  const { data: routeData, isLoading: isCalculatingRoute } = trpc.maps.computeRoute.useQuery(
+  const { data: routeData } = trpc.maps.computeRoute.useQuery(
     {
       origin: pickupLocation!,
       destination: dropoffLocation!,
@@ -67,19 +71,20 @@ export default function RequestRideScreen() {
     },
     {
       enabled: !!pickupLocation && !!dropoffLocation,
-    }
+    },
   );
 
   useEffect(() => {
     if (!pickupLocation || !dropoffLocation) {
+      setRouteSummary(null);
       return;
     }
+
     if (routeData) {
       setRouteSummary(routeData);
       return;
     }
 
-    // Offline route fallback for standalone APK runs
     const fallbackDistanceKm = calculateDistance(
       pickupLocation.lat,
       pickupLocation.lng,
@@ -117,7 +122,6 @@ export default function RequestRideScreen() {
           currency: estimate.fare.currency,
         });
       } catch {
-        // fallback to local fare estimate if API estimate fails
         const fallbackTotal = calculateFare(
           routeSummary.distanceMeters / 1000,
           routeSummary.durationSeconds / 60,
@@ -131,6 +135,7 @@ export default function RequestRideScreen() {
         });
       }
     };
+
     void fetchEstimate();
   }, [pickupLocation, dropoffLocation, routeSummary, rideType]);
 
@@ -168,11 +173,11 @@ export default function RequestRideScreen() {
       } catch {
         if (!pickupLocation || isCancelled) return;
 
-        // Local fallback for standalone/offline mode.
         const localDrivers = await getOnlineDrivers();
         if (isCancelled) return;
+
         const localMarkers = localDrivers
-          .map((driver) => {
+          .map<NearbyDriverMarker | null>((driver) => {
             const lat = Number(driver.currentLat);
             const lng = Number(driver.currentLng);
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
@@ -186,7 +191,7 @@ export default function RequestRideScreen() {
               etaSeconds: Math.max(60, Math.round((distanceKm / 35) * 3600)),
             } satisfies NearbyDriverMarker;
           })
-          .filter((driver): driver is NonNullable<typeof driver> => driver !== null)
+          .filter((driver): driver is NearbyDriverMarker => driver !== null)
           .slice(0, 20);
 
         setNearbyDrivers(localMarkers);
@@ -195,6 +200,7 @@ export default function RequestRideScreen() {
     };
 
     void fetchNearby();
+
     if (pickupLocation) {
       timer = setInterval(() => {
         void fetchNearby();
@@ -245,7 +251,7 @@ export default function RequestRideScreen() {
     }
 
     if (!pickupLocation || !dropoffLocation || !currentUser) {
-      Alert.alert("Error", "Please select pickup and dropoff locations");
+      Alert.alert("Validation", "Please select pickup and dropoff locations.");
       return;
     }
 
@@ -253,8 +259,9 @@ export default function RequestRideScreen() {
     try {
       const distanceMeters = routeSummary?.distanceMeters ?? 0;
       const durationSeconds = routeSummary?.durationSeconds ?? 0;
-      let trip: any = null;
+      let trip: any;
       let usedOfflineMode = false;
+
       try {
         trip = await createTrip({
           pickup: pickupLocation,
@@ -268,16 +275,11 @@ export default function RequestRideScreen() {
           idempotencyKey: `trip_${Date.now()}_${currentUser.id}`,
         });
       } catch {
-        // Standalone APK fallback: keep seeker flow working with local DB if backend is unreachable.
         usedOfflineMode = true;
         setIsOfflineMode(true);
         const localFare =
           farePreview?.total ??
-          calculateFare(
-            (distanceMeters || 1000) / 1000,
-            (durationSeconds || 300) / 60,
-            rideType,
-          );
+          calculateFare((distanceMeters || 1000) / 1000, (durationSeconds || 300) / 60, rideType);
         trip = await createRide(
           currentUser.id.toString(),
           pickupLocation.lat,
@@ -295,8 +297,9 @@ export default function RequestRideScreen() {
       }
 
       if (usedOfflineMode) {
-        Alert.alert("Ride requested (offline mode)", "Opening trip tracker.");
+        Alert.alert("Offline Mode", "Ride created locally. Opening trip tracker.");
       }
+
       router.replace(`/trip/${trip.id}` as never);
     } catch (error) {
       console.error("Failed to request ride:", error);
@@ -308,31 +311,48 @@ export default function RequestRideScreen() {
 
   const estimatedFare = farePreview?.total ?? 0;
   const rideScheduleLabel =
-    scheduleOption === "now"
-      ? "Now"
-      : scheduleOption === "15min"
-      ? "In 15 min"
-      : "In 30 min";
+    scheduleOption === "now" ? "Now" : scheduleOption === "15min" ? "In 15 min" : "In 30 min";
+
+  const etaLabel = useMemo(() => {
+    if (!farePreview?.etaSeconds) return "--";
+    return `${Math.max(1, Math.round(farePreview.etaSeconds / 60))} min`;
+  }, [farePreview?.etaSeconds]);
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="flex-1 gap-6 pb-8">
-          {/* Header */}
-          <View className="flex-row items-center justify-between">
-            <TouchableOpacity
-              onPress={() => router.back()}
-              className="w-10 h-10 rounded-full items-center justify-center"
-              style={{ backgroundColor: colors.surface }}
-            >
-              <Ionicons name="arrow-back" size={24} color={colors.foreground} />
-            </TouchableOpacity>
-            <Text className="text-xl font-bold text-foreground">Request a Ride</Text>
-            <View className="w-10" />
+        <View style={{ gap: 16, paddingBottom: 20 }}>
+          <View
+            style={{
+              borderRadius: radii.xl,
+              backgroundColor: "#0A1E49",
+              padding: 18,
+              ...shadows.md,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 999,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "rgba(255,255,255,0.14)",
+                }}
+              >
+                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+              <AppBadge label={`${nearbyDrivers.length} nearby`} tone="primary" />
+            </View>
+            <Text style={{ marginTop: 16, fontSize: 28, fontWeight: "800", color: "#FFFFFF" }}>Book Your Ride</Text>
+            <Text style={{ marginTop: 6, fontSize: 14, color: "#CBD5E1" }}>
+              Pickup, destination, ETA, and transparent fare in one flow.
+            </Text>
           </View>
 
-          {/* Map */}
-          <View className="h-64 rounded-2xl overflow-hidden">
+          <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
             {canRenderNativeMap ? (
               <RideMap
                 userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
@@ -340,263 +360,155 @@ export default function RequestRideScreen() {
                 dropoffLocation={dropoffLocation || undefined}
                 routePolyline={routeSummary?.encodedPolyline}
                 nearbyDrivers={nearbyDrivers}
-                onPickupSelect={(loc) => {
-                  void handlePickupMapSelect(loc);
+                onPickupSelect={(location) => {
+                  void handlePickupMapSelect(location);
                 }}
-                onDropoffSelect={(loc) => {
-                  void handleDropoffMapSelect(loc);
+                onDropoffSelect={(location) => {
+                  void handleDropoffMapSelect(location);
                 }}
-                style={{ flex: 1 }}
+                style={{ height: 320 }}
               />
             ) : (
-              <View className="flex-1 rounded-2xl p-4 items-center justify-center gap-3" style={{ backgroundColor: colors.surface }}>
-                <Text className="text-sm text-center text-muted">
-                  Map preview is disabled on this Android build (missing Google Maps key).
+              <View style={{ height: 320, alignItems: "center", justifyContent: "center", backgroundColor: brand.surfaceMuted, gap: 8 }}>
+                <Text style={{ color: brand.textMuted, fontSize: 13, textAlign: "center", paddingHorizontal: 20 }}>
+                  Map preview is unavailable in this Android build (missing Google Maps key).
                 </Text>
-                <TouchableOpacity
-                  className="bg-primary rounded-lg px-4 py-2"
+                <AppButton
+                  label="Use Current Location"
+                  variant="secondary"
+                  fullWidth={false}
                   onPress={() => {
                     if (currentLocation) {
                       setPickupLocation({ lat: currentLocation.latitude, lng: currentLocation.longitude });
                     }
                   }}
-                >
-                  <Text className="text-white font-semibold">Use Current Location as Pickup</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="bg-surface rounded-lg px-4 py-2"
-                  onPress={() => {
-                    if (pickupLocation) {
-                      const fallbackDropoff = {
-                        lat: pickupLocation.lat + 0.01,
-                        lng: pickupLocation.lng + 0.01,
-                      };
-                      setDropoffLocation(fallbackDropoff);
-                      setDropoffAddress("Demo Dropoff (offline)");
-                    }
-                  }}
-                >
-                  <Text className="text-foreground font-semibold">Set Demo Dropoff</Text>
-                </TouchableOpacity>
+                />
               </View>
             )}
           </View>
 
-          {isOfflineMode && (
-            <View className="rounded-lg p-3" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-xs text-muted text-center">
-                Running in offline mode. Trips are stored locally on this device.
+          {isOfflineMode ? (
+            <AppCard tone="muted">
+              <Text style={{ fontSize: 12, color: brand.textMuted }}>
+                Backend unreachable: requests are being stored locally on this device.
               </Text>
-            </View>
-          )}
+            </AppCard>
+          ) : null}
 
-          {/* Location Selection */}
-          <View className="gap-4">
-            <Text className="text-lg font-bold text-foreground">Locations</Text>
-
-            <View className="gap-3">
+          <AppCard>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: brand.text }}>Pickup</Text>
+            <View style={{ marginTop: 10 }}>
               <PlaceSearchInput
                 placeholder="Search pickup location"
                 onPlaceSelect={handlePickupSelect}
                 userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
               />
+            </View>
 
+            <Text style={{ marginTop: 14, fontSize: 16, fontWeight: "700", color: brand.text }}>Destination</Text>
+            <View style={{ marginTop: 10 }}>
               <PlaceSearchInput
                 placeholder="Search dropoff location"
                 onPlaceSelect={handleDropoffSelect}
                 userLocation={pickupLocation || undefined}
               />
             </View>
-          </View>
+          </AppCard>
 
-          {/* Time and Calendar */}
-          <View className="gap-4">
-            <Text className="text-lg font-bold text-foreground">Time & Calendar</Text>
-            <View className="rounded-lg p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-sm text-muted">
-                Selected pickup time: {rideScheduleLabel}
-              </Text>
-              <View className="flex-row gap-2">
-                <TouchableOpacity
-                  onPress={() => setScheduleOption("now")}
-                  className={`flex-1 rounded-lg py-2 items-center justify-center ${
-                    scheduleOption === "now" ? "bg-primary" : "bg-muted"
-                  }`}
-                >
-                  <Text
-                    className={`text-sm font-semibold ${
-                      scheduleOption === "now" ? "text-white" : "text-foreground"
-                    }`}
+          <AppCard tone="muted">
+            <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Pickup Time</Text>
+            <Text style={{ marginTop: 4, fontSize: 12, color: brand.textMuted }}>Selected: {rideScheduleLabel}</Text>
+            <View style={{ marginTop: 10, flexDirection: "row", gap: 8 }}>
+              {[
+                { value: "now", label: "Now" },
+                { value: "15min", label: "+15m" },
+                { value: "30min", label: "+30m" },
+              ].map((option) => {
+                const selected = scheduleOption === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    onPress={() => setScheduleOption(option.value as "now" | "15min" | "30min")}
+                    style={{
+                      flex: 1,
+                      borderRadius: radii.md,
+                      borderWidth: 1,
+                      borderColor: selected ? brand.primary : brand.border,
+                      backgroundColor: selected ? brand.primary : brand.surface,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 10,
+                    }}
                   >
-                    Now
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setScheduleOption("15min")}
-                  className={`flex-1 rounded-lg py-2 items-center justify-center ${
-                    scheduleOption === "15min" ? "bg-primary" : "bg-muted"
-                  }`}
-                >
-                  <Text
-                    className={`text-sm font-semibold ${
-                      scheduleOption === "15min" ? "text-white" : "text-foreground"
-                    }`}
+                    <Text style={{ fontWeight: "700", color: selected ? "#FFFFFF" : brand.text }}>{option.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </AppCard>
+
+          <AppCard>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: brand.text }}>Vehicle</Text>
+            <View style={{ marginTop: 10, flexDirection: "row", gap: 10 }}>
+              {([
+                { key: "standard", label: "Standard", desc: "Economy ride", icon: "car" },
+                { key: "premium", label: "Premium", desc: "Comfort ride", icon: "car-sport" },
+              ] as const).map((option) => {
+                const selected = rideType === option.key;
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    onPress={() => setRideType(option.key)}
+                    style={{
+                      flex: 1,
+                      borderRadius: radii.md,
+                      borderWidth: 1,
+                      borderColor: selected ? brand.primary : brand.border,
+                      backgroundColor: selected ? brand.primarySoft : brand.surface,
+                      padding: 12,
+                      gap: 5,
+                    }}
                   >
-                    +15 min
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setScheduleOption("30min")}
-                  className={`flex-1 rounded-lg py-2 items-center justify-center ${
-                    scheduleOption === "30min" ? "bg-primary" : "bg-muted"
-                  }`}
-                >
-                  <Text
-                    className={`text-sm font-semibold ${
-                      scheduleOption === "30min" ? "text-white" : "text-foreground"
-                    }`}
-                  >
-                    +30 min
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                    <Ionicons name={option.icon} size={19} color={selected ? brand.primary : brand.textMuted} />
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>{option.label}</Text>
+                    <Text style={{ fontSize: 12, color: brand.textMuted }}>{option.desc}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          </View>
+          </AppCard>
 
-          {/* Ride Type Selection */}
-          <View className="gap-4">
-            <Text className="text-lg font-bold text-foreground">Ride Type</Text>
-
-            <View className="flex-row gap-3">
-              <TouchableOpacity
-                onPress={() => setRideType("standard")}
-                className={`flex-1 p-4 rounded-lg border-2 ${
-                  rideType === "standard" ? "border-primary" : "border-border"
-                }`}
-                style={{ backgroundColor: colors.surface }}
-              >
-                <Ionicons
-                  name="car"
-                  size={24}
-                  color={rideType === "standard" ? colors.primary : colors.foreground}
-                />
-                <Text className="text-sm font-semibold mt-2">Standard</Text>
-                <Text className="text-xs text-muted">Basic ride</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setRideType("premium")}
-                className={`flex-1 p-4 rounded-lg border-2 ${
-                  rideType === "premium" ? "border-primary" : "border-border"
-                }`}
-                style={{ backgroundColor: colors.surface }}
-              >
-                <Ionicons
-                  name="car-sport"
-                  size={24}
-                  color={rideType === "premium" ? colors.primary : colors.foreground}
-                />
-                <Text className="text-sm font-semibold mt-2">Premium</Text>
-                <Text className="text-xs text-muted">Luxury ride</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Route Summary */}
-          {routeSummary && (
-            <View className="gap-4">
-              <Text className="text-lg font-bold text-foreground">Route Summary</Text>
-              <View
-                className="p-4 rounded-lg"
-                style={{ backgroundColor: colors.surface }}
-              >
-                <Text className="text-sm text-muted">
-                  Distance: {(routeSummary.distanceMeters / 1000).toFixed(1)} km
-                </Text>
-                <Text className="text-sm text-muted">
-                  Duration: {Math.round(routeSummary.durationSeconds / 60)} min
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {pickupLocation && (
-            <View className="rounded-lg p-4 gap-1" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-sm font-semibold text-foreground">Nearby Drivers</Text>
-              <Text className="text-xs text-muted">
-                {nearbyDrivers.length} online drivers within 6 km
-              </Text>
-              {nearbyUpdatedAt && (
-                <Text className="text-xs text-muted">
-                  Updated: {new Date(nearbyUpdatedAt).toLocaleTimeString()}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {/* Fare Estimate */}
-          {pickupLocation && dropoffLocation && (
-            <View className="gap-4">
-              <Text className="text-lg font-bold text-foreground">Fare Estimate</Text>
-              <View
-                className="p-4 rounded-lg items-center"
-                style={{ backgroundColor: colors.surface }}
-              >
-                <Text className="text-2xl font-bold text-foreground">
+          <AppCard tone="primary">
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View>
+                <Text style={{ fontSize: 12, color: brand.textMuted }}>Estimated fare</Text>
+                <Text style={{ marginTop: 4, fontSize: 30, fontWeight: "800", color: brand.text }}>
                   ${estimatedFare.toFixed(2)}
                 </Text>
-                <Text className="text-sm text-muted">
-                  {isCalculatingRoute ? "Calculating route..." : "Estimated fare"}
+                <Text style={{ marginTop: 4, fontSize: 12, color: brand.textMuted }}>Payment: Cash</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ fontSize: 12, color: brand.textMuted }}>Distance</Text>
+                <Text style={{ marginTop: 2, fontSize: 15, fontWeight: "700", color: brand.text }}>
+                  {farePreview ? `${(farePreview.distanceMeters / 1000).toFixed(1)} km` : "--"}
                 </Text>
-                {farePreview && (
-                  <Text className="text-xs text-muted mt-1">
-                    {(farePreview.distanceMeters / 1000).toFixed(1)} km • {Math.round(farePreview.etaSeconds / 60)} min
-                  </Text>
-                )}
+                <Text style={{ marginTop: 6, fontSize: 12, color: brand.textMuted }}>ETA {etaLabel}</Text>
               </View>
             </View>
-          )}
-
-          {/* Payment and Invoice */}
-          <View className="gap-4">
-            <Text className="text-lg font-bold text-foreground">Payment & Invoice</Text>
-            <View className="rounded-lg p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-sm text-foreground font-semibold">In-app payment method: Cash</Text>
-              <Text className="text-xs text-muted">
-                Card and wallet support are prepared and can be enabled in a future release.
+            {nearbyUpdatedAt ? (
+              <Text style={{ marginTop: 10, fontSize: 11, color: brand.textMuted }}>
+                Nearby updated: {new Date(nearbyUpdatedAt).toLocaleTimeString()}
               </Text>
-              <Text className="text-xs text-muted">
-                A digital invoice is generated automatically when the ride is completed.
-              </Text>
-            </View>
-          </View>
+            ) : null}
+          </AppCard>
 
-          {/* Smart booking feature summary */}
-          <View className="rounded-lg p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-            <Text className="text-sm font-semibold text-foreground">Smart ride booking options</Text>
-            <Text className="text-xs text-muted">Vehicle choice, live GPS details, route safety, and transparent fare preview.</Text>
-          </View>
-
-          {/* Request Button */}
-          <TouchableOpacity
-            onPress={handleRequestRide}
+          <AppButton
+            label={isRequesting ? "Looking for Drivers..." : "Confirm Ride"}
+            loading={isRequesting}
             disabled={!pickupLocation || !dropoffLocation || isRequesting}
-            className={`p-4 rounded-2xl items-center justify-center ${
-              pickupLocation && dropoffLocation && !isRequesting
-                ? "bg-primary"
-                : "bg-muted"
-            }`}
-          >
-            <Text
-              className={`text-lg font-semibold ${
-                pickupLocation && dropoffLocation && !isRequesting
-                  ? "text-primary-foreground"
-                  : "text-muted-foreground"
-              }`}
-            >
-              {isRequesting ? "Requesting..." : "Request Ride"}
-            </Text>
-          </TouchableOpacity>
+            onPress={handleRequestRide}
+            leftIcon={<Ionicons name="car-sport" size={18} color="#FFFFFF" />}
+          />
         </View>
       </ScrollView>
     </ScreenContainer>

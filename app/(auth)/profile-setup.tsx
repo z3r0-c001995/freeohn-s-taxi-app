@@ -1,17 +1,22 @@
-import { Text, View, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+
 import { ScreenContainer } from "@/components/screen-container";
-import { useColors } from "@/hooks/use-colors";
+import { AppButton } from "@/components/ui/app-button";
+import { AppCard } from "@/components/ui/app-card";
+import { AppInput } from "@/components/ui/app-input";
+import { IS_DRIVER_APP } from "@/constants/app-variant";
+import { radii } from "@/constants/design-system";
+import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useAppStore } from "@/lib/store";
 import { createUser } from "@/lib/db-service";
-import { Ionicons } from "@expo/vector-icons";
-import { IS_DRIVER_APP } from "@/constants/app-variant";
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const colors = useColors();
+  const brand = useBrandTheme();
   const { setCurrentUser, setIsAuthenticated, persist } = useAppStore();
 
   const [name, setName] = useState("");
@@ -47,7 +52,7 @@ export default function ProfileSetupScreen() {
     }
 
     if (!name.trim()) {
-      Alert.alert("Error", "Please enter your name");
+      Alert.alert("Validation", "Please enter your full name.");
       return;
     }
 
@@ -55,20 +60,15 @@ export default function ProfileSetupScreen() {
     try {
       let user: any;
       try {
-        // Prefer local SQLite profile creation when available.
         user = await createUser(phone, name, email || undefined, "phone", role);
       } catch (dbError) {
-        // Web private browsing and restricted storage can block expo-sqlite.
         console.warn("[auth] Falling back to in-memory profile creation.", dbError);
         user = buildFallbackUser();
       }
 
-      // Update store
       setCurrentUser(user);
       setIsAuthenticated(true);
       await persist();
-
-      // Navigate to home
       router.replace("/(tabs)");
     } catch (error) {
       console.error("Error creating profile:", error);
@@ -79,62 +79,60 @@ export default function ProfileSetupScreen() {
   };
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="flex-1 justify-center px-6 gap-6">
-          {/* Back Button */}
-          <TouchableOpacity onPress={() => router.back()} className="mb-4">
-            <Ionicons name="arrow-back" size={24} color={colors.foreground} />
+        <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24, gap: 18 }}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: radii.pill,
+              borderWidth: 1,
+              borderColor: brand.border,
+              backgroundColor: brand.surface,
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color={brand.text} />
           </TouchableOpacity>
 
-          {/* Header */}
-          <View className="gap-2">
-            <Text className="text-3xl font-bold text-foreground">Create Your Profile</Text>
-            <Text className="text-base text-muted">Complete your information</Text>
+          <View>
+            <Text style={{ fontSize: 30, fontWeight: "800", color: brand.text }}>Create Profile</Text>
+            <Text style={{ marginTop: 6, fontSize: 14, color: brand.textMuted }}>
+              Complete setup to start booking rides.
+            </Text>
           </View>
 
-          {/* Name Input */}
-          <View className="gap-2">
-            <Text className="text-sm font-semibold text-foreground">Full Name</Text>
-            <TextInput
+          <AppCard>
+            <AppInput
+              label="Full Name"
               placeholder="John Doe"
-              placeholderTextColor={colors.muted}
               value={name}
               onChangeText={setName}
               editable={!isLoading}
-              className="border border-border rounded-lg px-4 py-3 text-base text-foreground"
-              style={{ borderColor: colors.border }}
             />
-          </View>
+            <View style={{ marginTop: 14 }}>
+              <AppInput
+                label="Email (Optional)"
+                placeholder="john@example.com"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                editable={!isLoading}
+                autoCapitalize="none"
+              />
+            </View>
 
-          {/* Email Input */}
-          <View className="gap-2">
-            <Text className="text-sm font-semibold text-foreground">Email (Optional)</Text>
-            <TextInput
-              placeholder="john@example.com"
-              placeholderTextColor={colors.muted}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              editable={!isLoading}
-              className="border border-border rounded-lg px-4 py-3 text-base text-foreground"
-              style={{ borderColor: colors.border }}
-            />
-          </View>
-
-          {/* Continue Button */}
-          <TouchableOpacity
-            onPress={handleContinue}
-            disabled={isLoading}
-            className="bg-primary rounded-lg py-4 items-center"
-            style={{
-              opacity: isLoading ? 0.6 : 1,
-            }}
-          >
-            <Text className="text-white font-semibold text-base">
-              {isLoading ? "Creating Profile..." : "Complete Setup"}
-            </Text>
-          </TouchableOpacity>
+            <View style={{ marginTop: 18 }}>
+              <AppButton
+                label={isLoading ? "Creating Profile..." : "Complete Setup"}
+                loading={isLoading}
+                onPress={handleContinue}
+              />
+            </View>
+          </AppCard>
         </View>
       </ScrollView>
     </ScreenContainer>

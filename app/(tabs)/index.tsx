@@ -1,31 +1,39 @@
-import { ScrollView, Text, View, TouchableOpacity, Alert } from "react-native";
-import { useEffect, useMemo, useState } from "react";
-import { ScreenContainer } from "@/components/screen-container";
-import { useAppStore } from "@/lib/store";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
-import { useColors } from "@/hooks/use-colors";
-import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
+
+import { ScreenContainer } from "@/components/screen-container";
+import { RideMap } from "@/components/maps/RideMap";
+import { AppBadge } from "@/components/ui/app-badge";
+import { AppButton } from "@/components/ui/app-button";
+import { AppCard } from "@/components/ui/app-card";
+import { APP_LABEL, IS_DRIVER_APP, IS_SEEKER_APP } from "@/constants/app-variant";
+import { radii, shadows } from "@/constants/design-system";
+import { useBrandTheme } from "@/hooks/use-brand-theme";
+import { useLocationTracking } from "@/hooks/use-location-tracking";
+import { useAppStore } from "@/lib/store";
+import { calculateDistance } from "@/lib/ride-utils";
 import {
-  setDriverOnlineStatus,
-  getDriverProfile,
   getAvailableRides,
-  acceptRide,
+  getDriverProfile,
   getRideById,
+  setDriverOnlineStatus,
   startRide,
+  acceptRide,
   completeRide,
 } from "@/lib/db-service";
 import {
   acceptDriverRequest,
   completeTrip as completeRemoteTrip,
   getDriverRequests,
+  getNearbyDrivers,
   getTrip as getRemoteTrip,
   startTrip as startRemoteTrip,
   updateDriverStatus,
 } from "@/lib/ride-hailing-api";
-import { calculateDistance } from "@/lib/ride-utils";
-import { APP_LABEL, IS_DRIVER_APP, IS_SEEKER_APP } from "@/constants/app-variant";
+import type { NearbyDriverMarker } from "@/lib/maps/map-types";
 
 function mapRemoteTripToLocal(remoteTrip: any) {
   return {
@@ -62,7 +70,7 @@ function mapRemoteTripToLocal(remoteTrip: any) {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const colors = useColors();
+  const brand = useBrandTheme();
   const {
     currentUser,
     setCurrentLocation,
@@ -78,9 +86,11 @@ export default function HomeScreen() {
     persist,
     rideHistory,
   } = useAppStore();
+
   const { isTracking } = useLocationTracking();
-  const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
   const [availableRides, setAvailableRides] = useState<any[]>([]);
+  const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
+  const [lastNearbyUpdate, setLastNearbyUpdate] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -105,34 +115,36 @@ export default function HomeScreen() {
     }
   };
 
-  const loadAvailableRides = async () => {
-    if (currentUser?.role === "driver" && driverProfile?.isOnline) {
-      try {
-        try {
-          const remote = await getDriverRequests();
-          const rides = await Promise.all(
-            (remote.requests ?? []).map(async (offer: any) => {
-              const trip = await getRemoteTrip(offer.tripId);
-              const mapped = mapRemoteTripToLocal(trip);
-              return {
-                ...mapped,
-                id: offer.id,
-                dispatchOfferId: offer.id,
-                tripId: offer.tripId,
-                distanceKm: offer.distanceKm ?? 0,
-              };
-            }),
-          );
-          setAvailableRides(rides);
-        } catch {
-          const rides = await getAvailableRides();
-          setAvailableRides(rides);
-        }
-      } catch (error) {
-        console.error("Failed to load available rides:", error);
-      }
+  const loadAvailableRides = useCallback(async () => {
+    if (currentUser?.role !== "driver" || !driverProfile?.isOnline) {
+      return;
     }
-  };
+
+    try {
+      try {
+        const remote = await getDriverRequests();
+        const rides = await Promise.all(
+          (remote.requests ?? []).map(async (offer: any) => {
+            const trip = await getRemoteTrip(offer.tripId);
+            const mapped = mapRemoteTripToLocal(trip);
+            return {
+              ...mapped,
+              id: offer.id,
+              dispatchOfferId: offer.id,
+              tripId: offer.tripId,
+              distanceKm: offer.distanceKm ?? 0,
+            };
+          }),
+        );
+        setAvailableRides(rides);
+      } catch {
+        const rides = await getAvailableRides();
+        setAvailableRides(rides);
+      }
+    } catch (error) {
+      console.error("Failed to load available rides:", error);
+    }
+  }, [currentUser?.role, driverProfile?.isOnline]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -142,19 +154,58 @@ export default function HomeScreen() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [driverProfile?.isOnline, currentUser?.role]);
+  }, [driverProfile?.isOnline, loadAvailableRides]);
+
+  useEffect(() => {
+    if (!IS_SEEKER_APP || !currentLocation || currentUser?.role !== "rider") {
+      setNearbyDrivers([]);
+      return;
+    }
+
+    let canceled = false;
+    const run = async () => {
+      try {
+        const response = await getNearbyDrivers({
+          pickup: { lat: currentLocation.latitude, lng: currentLocation.longitude },
+          radiusKm: 6,
+          limit: 16,
+        });
+
+        if (canceled) return;
+        setNearbyDrivers(
+          response.drivers.map((driver) => ({
+            driverId: driver.driverId,
+            lat: driver.location.lat,
+            lng: driver.location.lng,
+            distanceMeters: driver.distanceMeters,
+            etaSeconds: driver.etaSeconds,
+          })),
+        );
+        setLastNearbyUpdate(response.fetchedAt);
+      } catch {
+        if (!canceled) {
+          setNearbyDrivers([]);
+        }
+      }
+    };
+
+    void run();
+    const timer = setInterval(() => {
+      void run();
+    }, 6000);
+
+    return () => {
+      canceled = true;
+      clearInterval(timer);
+    };
+  }, [currentLocation, currentUser?.role]);
 
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      setLocationPermission(status === "granted");
-
       if (status === "granted") {
         const location = await Location.getCurrentPositionAsync({});
-        setCurrentLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
+        setCurrentLocation({ latitude: location.coords.latitude, longitude: location.coords.longitude });
       }
     } catch (error) {
       console.error("Location permission error:", error);
@@ -180,6 +231,10 @@ export default function HomeScreen() {
   const handleOpenTripCenter = () => {
     if (!activeRide?.id) return;
     router.push(`/trip/${activeRide.id}` as never);
+  };
+
+  const handleOpenRideHistory = () => {
+    router.push("/ride-history" as never);
   };
 
   const handleResetProfile = async () => {
@@ -292,31 +347,23 @@ export default function HomeScreen() {
     }
   };
 
-  const dateLabel = useMemo(
-    () =>
-      new Date().toLocaleDateString([], {
-        weekday: "short",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-    [],
-  );
-  const timeLabel = useMemo(
-    () =>
-      new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    [],
-  );
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString([], {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const timeLabel = today.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   const gpsLabel = currentLocation
     ? `${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`
     : "Waiting for GPS lock";
 
   const todayCompleted = rideHistory.filter((ride) => ride.status === "completed").length;
-  const ratingLabel = "5.0";
 
   if (!currentUser) {
     return (
@@ -327,282 +374,260 @@ export default function HomeScreen() {
   }
 
   const roleMismatch =
-    (IS_SEEKER_APP && currentUser.role !== "rider") ||
-    (IS_DRIVER_APP && currentUser.role !== "driver");
+    (IS_SEEKER_APP && currentUser.role !== "rider") || (IS_DRIVER_APP && currentUser.role !== "driver");
 
   if (roleMismatch) {
     return (
       <ScreenContainer className="bg-background items-center justify-center px-6">
-        <View className="items-center gap-4">
-          <Text className="text-xl font-bold text-foreground">{APP_LABEL}</Text>
-          <Text className="text-center text-muted">
+        <View style={{ alignItems: "center", gap: 12 }}>
+          <Text style={{ fontSize: 24, fontWeight: "800", color: brand.text }}>{APP_LABEL}</Text>
+          <Text style={{ textAlign: "center", color: brand.textMuted }}>
             This app only supports {IS_DRIVER_APP ? "driver" : "service seeker"} accounts.
           </Text>
-          <TouchableOpacity onPress={handleResetProfile} className="bg-primary rounded-lg py-3 px-5">
-            <Text className="text-white font-semibold">Switch Account</Text>
-          </TouchableOpacity>
+          <AppButton label="Switch Account" onPress={handleResetProfile} fullWidth={false} />
         </View>
       </ScreenContainer>
     );
   }
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="flex-1 gap-5 pb-8">
-          <View className="flex-row items-center justify-between">
-            <View>
-              <Text className="text-sm text-muted">Welcome back</Text>
-              <Text className="text-3xl font-bold text-foreground">{currentUser.name}</Text>
-              <Text className="text-xs text-muted mt-1">{APP_LABEL}</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => Alert.alert("Profile", "Profile screen coming soon.")}
-              className="w-12 h-12 rounded-full items-center justify-center"
-              style={{ backgroundColor: colors.surface }}
-            >
-              <Ionicons name="person" size={24} color={colors.foreground} />
-            </TouchableOpacity>
-          </View>
-
-          <View className="rounded-2xl p-4 flex-row items-center justify-between" style={{ backgroundColor: colors.surface }}>
-            <View>
-              <Text className="text-xs text-muted">Calendar</Text>
-              <Text className="text-base font-semibold text-foreground">{dateLabel}</Text>
-              <Text className="text-sm text-muted">{timeLabel}</Text>
-            </View>
-            <View className="w-11 h-11 rounded-full items-center justify-center" style={{ backgroundColor: colors.background }}>
-              <Ionicons name="calendar" size={22} color={colors.primary} />
-            </View>
-          </View>
-
-          <View className="rounded-2xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-            <View className="flex-row items-center gap-2">
-              <Ionicons
-                name={locationPermission ? "navigate" : "alert-circle"}
-                size={18}
-                color={locationPermission ? colors.success : colors.error}
-              />
-              <Text className="text-sm font-semibold text-foreground">
-                {locationPermission ? "Live GPS tracking details" : "Location permission required"}
-              </Text>
-            </View>
-            <Text className="text-xs text-muted">{gpsLabel}</Text>
-            <Text className="text-xs text-muted">
-              Tracking: {isTracking ? "Active" : "Idle"}
-            </Text>
-            {!locationPermission && (
-              <TouchableOpacity onPress={requestLocationPermission} className="self-start mt-1 px-3 py-2 rounded-lg" style={{ backgroundColor: colors.primary }}>
-                <Text className="text-white text-xs font-semibold">Enable Location</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {IS_SEEKER_APP ? (
+        <View style={{ gap: 16, paddingBottom: 20 }}>
+          {currentUser.role === "rider" ? (
             <>
-              <View className="rounded-2xl p-5 gap-4" style={{ backgroundColor: colors.surface }}>
-                <Text className="text-lg font-bold text-foreground">Smart Ride Booking</Text>
-                <Text className="text-sm text-muted">
-                  Choose your vehicle, pickup/dropoff points, and confirm your ride with live fare estimation.
-                </Text>
-                <TouchableOpacity onPress={handleRequestRide} className="bg-primary rounded-xl py-4 items-center justify-center">
-                  <Text className="text-white font-semibold text-base">Book a Ride</Text>
-                </TouchableOpacity>
-                <View className="flex-row gap-2">
-                  <View className="flex-1 rounded-lg p-3" style={{ backgroundColor: colors.background }}>
-                    <Text className="text-xs text-muted">Vehicles</Text>
-                    <Text className="text-sm font-semibold text-foreground">Standard / Premium</Text>
+              <View
+                style={{
+                  borderRadius: radii.xl,
+                  padding: 18,
+                  backgroundColor: "#0A1E49",
+                  ...shadows.md,
+                }}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: "#CBD5E1", fontSize: 13 }}>Welcome back</Text>
+                    <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 30, fontWeight: "800" }}>{currentUser.name}</Text>
+                    <Text style={{ marginTop: 4, color: "#CBD5E1", fontSize: 12 }}>{APP_LABEL}</Text>
                   </View>
-                  <View className="flex-1 rounded-lg p-3" style={{ backgroundColor: colors.background }}>
-                    <Text className="text-xs text-muted">Payment</Text>
-                    <Text className="text-sm font-semibold text-foreground">Cash (Card soon)</Text>
+                  <View
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 999,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "rgba(255,255,255,0.14)",
+                    }}
+                  >
+                    <Ionicons name="person" size={20} color="#FFFFFF" />
                   </View>
+                </View>
+                <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text style={{ color: "#CBD5E1", fontSize: 13 }}>{dateLabel} • {timeLabel}</Text>
+                  <AppBadge label={`${nearbyDrivers.length} drivers nearby`} tone="primary" />
                 </View>
               </View>
 
-              <View className="rounded-2xl p-4" style={{ backgroundColor: colors.surface }}>
-                <Text className="text-sm font-semibold text-foreground">Safety and Security</Text>
-                <Text className="text-xs text-muted mt-1">
-                  Route sharing, SOS, verified drivers, and in-app support are available during active trips.
-                </Text>
-                <TouchableOpacity
-                  onPress={handleOpenSafetyCenter}
-                  className="mt-3 rounded-lg py-3 items-center justify-center"
-                  style={{ backgroundColor: colors.primary }}
-                >
-                  <Text className="text-white font-semibold">Open Safety Center</Text>
-                </TouchableOpacity>
+              <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
+                <RideMap
+                  userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+                  nearbyDrivers={nearbyDrivers}
+                  style={{ height: 320 }}
+                />
               </View>
 
-              {activeRide && (
-                <View className="rounded-2xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-                  <Text className="text-base font-semibold text-foreground">Current Ride</Text>
-                  <Text className="text-sm text-muted">Pickup: {activeRide.pickupAddress ?? "Current location"}</Text>
-                  <Text className="text-sm text-muted">Dropoff: {activeRide.dropoffAddress ?? "Destination"}</Text>
-                  <Text className="text-sm font-semibold" style={{ color: colors.primary }}>
-                    Fare: ${activeRide.fareAmount.toFixed(2)}
+              <AppCard>
+                <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>Book a Ride</Text>
+                <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>
+                  Pickup: {gpsLabel}
+                </Text>
+                <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
+                  Live tracking: {isTracking ? "Active" : "Idle"}
+                </Text>
+
+                <View style={{ marginTop: 14 }}>
+                  <AppButton label="Request Ride" onPress={handleRequestRide} leftIcon={<Ionicons name="car-sport" size={16} color="#FFFFFF" />} />
+                </View>
+
+                <View style={{ marginTop: 10, flexDirection: "row", gap: 10 }}>
+                  <AppButton
+                    label="Safety"
+                    variant="outline"
+                    fullWidth={false}
+                    style={{ flex: 1 }}
+                    onPress={handleOpenSafetyCenter}
+                  />
+                  <AppButton
+                    label="History"
+                    variant="outline"
+                    fullWidth={false}
+                    style={{ flex: 1 }}
+                    onPress={handleOpenRideHistory}
+                  />
+                </View>
+
+                {lastNearbyUpdate ? (
+                  <Text style={{ marginTop: 10, fontSize: 11, color: brand.textMuted }}>
+                    Nearby updated: {new Date(lastNearbyUpdate).toLocaleTimeString()}
                   </Text>
-                  <View className="flex-row gap-2">
-                    <TouchableOpacity
-                      onPress={handleOpenTripCenter}
-                      className="flex-1 rounded-lg py-3 items-center justify-center"
-                      style={{ backgroundColor: colors.primary }}
-                    >
-                      <Text className="text-white font-semibold">Track Ride</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => router.push("/(tabs)/chat")}
-                      className="flex-1 rounded-lg py-3 items-center justify-center"
-                      style={{ backgroundColor: colors.background }}
-                    >
-                      <Text className="text-foreground font-semibold">Chat Driver</Text>
-                    </TouchableOpacity>
+                ) : null}
+              </AppCard>
+
+              {activeRide ? (
+                <AppCard tone="accent">
+                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Current Trip</Text>
+                  <Text style={{ marginTop: 8, fontSize: 13, color: brand.textMuted }}>
+                    Pickup: {activeRide.pickupAddress ?? `${activeRide.pickupLat}, ${activeRide.pickupLng}`}
+                  </Text>
+                  <Text style={{ marginTop: 3, fontSize: 13, color: brand.textMuted }}>
+                    Dropoff: {activeRide.dropoffAddress ?? `${activeRide.dropoffLat}, ${activeRide.dropoffLng}`}
+                  </Text>
+                  <Text style={{ marginTop: 8, fontSize: 24, fontWeight: "800", color: brand.text }}>
+                    ${activeRide.fareAmount.toFixed(2)}
+                  </Text>
+
+                  <View style={{ marginTop: 12 }}>
+                    <AppButton label="Track Trip" variant="secondary" onPress={handleOpenTripCenter} />
+                  </View>
+                  <View style={{ marginTop: 8 }}>
+                    <AppButton label="Chat Driver" variant="outline" onPress={() => router.push("/(tabs)/chat")} />
+                  </View>
+                </AppCard>
+              ) : null}
+
+              <AppCard tone="muted">
+                <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Ride Stats</Text>
+                <View style={{ marginTop: 8, flexDirection: "row", gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, color: brand.textMuted }}>Completed today</Text>
+                    <Text style={{ marginTop: 2, fontSize: 22, fontWeight: "800", color: brand.text }}>{todayCompleted}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, color: brand.textMuted }}>Payment</Text>
+                    <Text style={{ marginTop: 2, fontSize: 15, fontWeight: "700", color: brand.text }}>Cash</Text>
                   </View>
                 </View>
-              )}
-
-              <View className="rounded-2xl p-4" style={{ backgroundColor: colors.surface }}>
-                <Text className="text-sm font-semibold text-foreground">Digital Invoice</Text>
-                <Text className="text-xs text-muted mt-1">
-                  A digital invoice is generated automatically after trip completion.
-                </Text>
-              </View>
+              </AppCard>
             </>
           ) : (
             <>
-              <View className="rounded-2xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-                <Text className="text-lg font-bold text-foreground">Driver Status</Text>
-                <Text className="text-xs text-muted">
-                  Driver onboarding is owner-managed. Sign in with your company-registered account and go online.
+              <View
+                style={{
+                  borderRadius: radii.xl,
+                  padding: 18,
+                  backgroundColor: "#0F1E4A",
+                  ...shadows.md,
+                }}
+              >
+                <Text style={{ color: "#CBD5E1", fontSize: 13 }}>Welcome back</Text>
+                <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 30, fontWeight: "800" }}>{currentUser.name}</Text>
+                <Text style={{ marginTop: 6, color: "#CBD5E1", fontSize: 13 }}>
+                  {driverProfile?.isOnline ? "Online and receiving requests" : "Offline"}
                 </Text>
-                <TouchableOpacity
-                  onPress={handleToggleOnline}
-                  className={`rounded-xl py-4 items-center justify-center ${
-                    driverProfile?.isOnline ? "bg-error" : "bg-success"
-                  }`}
-                >
-                  <Text className="text-white font-semibold text-base">
-                    {driverProfile?.isOnline ? "Go Offline" : "Go Online"}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleOpenDriverDispatch}
-                  className="rounded-xl py-3 items-center justify-center"
-                  style={{ backgroundColor: colors.background }}
-                >
-                  <Text className="text-sm font-semibold" style={{ color: colors.primary }}>
-                    Open Driver Dispatch Console
-                  </Text>
-                </TouchableOpacity>
+                <View style={{ marginTop: 12 }}>
+                  <AppButton
+                    label={driverProfile?.isOnline ? "Go Offline" : "Go Online"}
+                    variant={driverProfile?.isOnline ? "danger" : "success"}
+                    onPress={handleToggleOnline}
+                  />
+                </View>
               </View>
 
-              <View className="rounded-2xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-                <Text className="text-sm font-semibold text-foreground">Real-Time Tracking and Navigation</Text>
-                <Text className="text-xs text-muted">Nearby client requests: {availableRides.length}</Text>
-                <Text className="text-xs text-muted">
-                  Availability: {driverProfile?.isOnline ? "Online" : "Offline"}
+              <AppCard>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Driver Dispatch</Text>
+                <Text style={{ marginTop: 8, fontSize: 13, color: brand.textMuted }}>
+                  Date: {dateLabel} • {timeLabel}
                 </Text>
-                <Text className="text-xs text-muted">Current GPS: {gpsLabel}</Text>
-              </View>
+                <Text style={{ marginTop: 4, fontSize: 13, color: brand.textMuted }}>GPS: {gpsLabel}</Text>
+                <Text style={{ marginTop: 4, fontSize: 13, color: brand.textMuted }}>
+                  Tracking: {isTracking ? "Active" : "Idle"}
+                </Text>
+                <View style={{ marginTop: 12 }}>
+                  <AppButton label="Open Driver Dashboard" variant="secondary" onPress={handleOpenDriverDispatch} />
+                </View>
+              </AppCard>
 
-              {driverProfile?.isOnline && availableRides.length > 0 && (
-                <View className="gap-3">
-                  <Text className="text-lg font-bold text-foreground">Incoming Client Requests</Text>
-                  {availableRides.map((ride) => {
-                    const pickupDistanceKm = driverProfile?.currentLat && driverProfile?.currentLng
-                      ? calculateDistance(
-                          parseFloat(driverProfile.currentLat),
-                          parseFloat(driverProfile.currentLng),
-                          parseFloat(ride.pickupLat),
-                          parseFloat(ride.pickupLng),
-                        )
-                      : 0;
+              {availableRides.length > 0 ? (
+                <AppCard>
+                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Incoming Requests</Text>
+                  <View style={{ marginTop: 10, gap: 10 }}>
+                    {availableRides.map((ride) => {
+                      const pickupDistanceKm =
+                        driverProfile?.currentLat && driverProfile?.currentLng
+                          ? calculateDistance(
+                              parseFloat(driverProfile.currentLat),
+                              parseFloat(driverProfile.currentLng),
+                              parseFloat(ride.pickupLat),
+                              parseFloat(ride.pickupLng),
+                            )
+                          : 0;
 
-                    return (
-                      <View key={String(ride.id)} className="rounded-xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-                        <Text className="text-sm font-semibold text-foreground">Ride #{String(ride.id).slice(-6)}</Text>
-                        <Text className="text-xs text-muted">Pickup: {ride.pickupAddress ?? `${ride.pickupLat}, ${ride.pickupLng}`}</Text>
-                        <Text className="text-xs text-muted">Dropoff: {ride.dropoffAddress ?? `${ride.dropoffLat}, ${ride.dropoffLng}`}</Text>
-                        <Text className="text-xs text-muted">Distance: {pickupDistanceKm.toFixed(1)} km</Text>
-                        <View className="flex-row gap-2 mt-1">
-                          <TouchableOpacity
-                            onPress={() => handleAcceptRide(String(ride.id))}
-                            className="flex-1 rounded-lg py-2 items-center justify-center"
-                            style={{ backgroundColor: colors.success }}
-                          >
-                            <Text className="text-white font-semibold">Accept</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => handleDeclineRide(String(ride.id))}
-                            className="flex-1 rounded-lg py-2 items-center justify-center"
-                            style={{ backgroundColor: colors.error }}
-                          >
-                            <Text className="text-white font-semibold">Decline</Text>
-                          </TouchableOpacity>
+                      return (
+                        <View
+                          key={String(ride.id)}
+                          style={{
+                            borderRadius: radii.md,
+                            borderWidth: 1,
+                            borderColor: brand.border,
+                            backgroundColor: brand.surfaceMuted,
+                            padding: 12,
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Ride {String(ride.id).slice(-6)}</Text>
+                          <Text style={{ marginTop: 5, fontSize: 12, color: brand.textMuted }}>
+                            Pickup {ride.pickupAddress ?? `${ride.pickupLat}, ${ride.pickupLng}`}
+                          </Text>
+                          <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
+                            Distance to pickup {pickupDistanceKm.toFixed(1)} km
+                          </Text>
+                          <View style={{ marginTop: 10, flexDirection: "row", gap: 8 }}>
+                            <AppButton
+                              label="Accept"
+                              variant="success"
+                              fullWidth={false}
+                              style={{ flex: 1 }}
+                              onPress={() => handleAcceptRide(String(ride.id))}
+                            />
+                            <AppButton
+                              label="Decline"
+                              variant="danger"
+                              fullWidth={false}
+                              style={{ flex: 1 }}
+                              onPress={() => handleDeclineRide(String(ride.id))}
+                            />
+                          </View>
                         </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
+                      );
+                    })}
+                  </View>
+                </AppCard>
+              ) : null}
 
-              {activeRide && (
-                <View className="rounded-2xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-                  <Text className="text-base font-semibold text-foreground">Active Trip</Text>
-                  <Text className="text-sm text-muted">Pickup: {activeRide.pickupAddress ?? "Pickup location"}</Text>
-                  <Text className="text-sm text-muted">Dropoff: {activeRide.dropoffAddress ?? "Dropoff location"}</Text>
-                  <Text className="text-sm font-semibold" style={{ color: colors.primary }}>
-                    Fare: ${activeRide.fareAmount.toFixed(2)}
+              {activeRide ? (
+                <AppCard tone="accent">
+                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Active Trip</Text>
+                  <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>
+                    Pickup: {activeRide.pickupAddress ?? "Pickup location"}
                   </Text>
-                  <View className="flex-row gap-2">
-                    {activeRide.status === "accepted" && (
-                      <TouchableOpacity
-                        onPress={() => handleStartRide(activeRide.id.toString())}
-                        className="flex-1 rounded-lg py-3 items-center justify-center"
-                        style={{ backgroundColor: colors.primary }}
-                      >
-                        <Text className="text-white font-semibold">Start Trip</Text>
-                      </TouchableOpacity>
-                    )}
-                    {activeRide.status === "in_progress" && (
-                      <TouchableOpacity
-                        onPress={() => handleCompleteRide(activeRide.id.toString())}
-                        className="flex-1 rounded-lg py-3 items-center justify-center"
-                        style={{ backgroundColor: colors.success }}
-                      >
-                        <Text className="text-white font-semibold">Complete Trip</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      onPress={() => router.push("/(tabs)/chat")}
-                      className="rounded-lg px-4 py-3 items-center justify-center"
-                      style={{ backgroundColor: colors.background }}
-                    >
-                      <Ionicons name="chatbubble" size={18} color={colors.foreground} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              <View className="rounded-2xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-                <Text className="text-base font-semibold text-foreground">Fleet Management Snapshot</Text>
-                <View className="flex-row gap-3">
-                  <View className="flex-1 rounded-lg p-3" style={{ backgroundColor: colors.background }}>
-                    <Text className="text-xs text-muted">Today</Text>
-                    <Text className="text-xl font-bold text-foreground">{todayCompleted}</Text>
-                    <Text className="text-xs text-muted">Completed trips</Text>
-                  </View>
-                  <View className="flex-1 rounded-lg p-3" style={{ backgroundColor: colors.background }}>
-                    <Text className="text-xs text-muted">Driver rating</Text>
-                    <Text className="text-xl font-bold text-foreground">{ratingLabel}</Text>
-                    <Text className="text-xs text-muted">Service quality</Text>
-                  </View>
-                </View>
-                <View className="rounded-lg p-3" style={{ backgroundColor: colors.background }}>
-                  <Text className="text-xs text-muted">Earnings</Text>
-                  <Text className="text-2xl font-bold text-foreground">$0.00</Text>
-                </View>
-              </View>
+                  <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
+                    Dropoff: {activeRide.dropoffAddress ?? "Dropoff location"}
+                  </Text>
+                  <Text style={{ marginTop: 8, fontSize: 24, fontWeight: "800", color: brand.text }}>
+                    ${activeRide.fareAmount.toFixed(2)}
+                  </Text>
+                  {activeRide.status === "accepted" ? (
+                    <View style={{ marginTop: 10 }}>
+                      <AppButton label="Start Trip" variant="secondary" onPress={() => handleStartRide(activeRide.id.toString())} />
+                    </View>
+                  ) : null}
+                  {activeRide.status === "in_progress" ? (
+                    <View style={{ marginTop: 10 }}>
+                      <AppButton label="Complete Trip" variant="success" onPress={() => handleCompleteRide(activeRide.id.toString())} />
+                    </View>
+                  ) : null}
+                </AppCard>
+              ) : null}
             </>
           )}
         </View>

@@ -3,6 +3,8 @@ import { View, StyleSheet, Platform } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import { LatLng } from "../../lib/maps/map-types";
 import { RideMapProps } from "./RideMap.types";
+import { IS_DRIVER_APP } from "@/constants/app-variant";
+import { driverTheme, riderTheme } from "@/constants/design-system";
 
 const decodePolyline = (encoded: string): LatLng[] => {
   const points: LatLng[] = [];
@@ -55,6 +57,7 @@ export function RideMap({
   onDropoffSelect,
   style,
 }: RideMapProps) {
+  const mapTheme = IS_DRIVER_APP ? driverTheme : riderTheme;
   const polylinePoints = useMemo(() => (routePolyline ? decodePolyline(routePolyline) : []), [routePolyline]);
   const hasAndroidGoogleMapsKey = Boolean(process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY);
   const mapProvider =
@@ -85,17 +88,25 @@ export function RideMap({
         }}
       >
         {pickupLocation && (
-          <Marker coordinate={{ latitude: pickupLocation.lat, longitude: pickupLocation.lng }} title="Pickup" pinColor="green" />
+          <Marker
+            coordinate={{ latitude: pickupLocation.lat, longitude: pickupLocation.lng }}
+            title="Pickup"
+            pinColor={mapTheme.mapPickup}
+          />
         )}
         {dropoffLocation && (
-          <Marker coordinate={{ latitude: dropoffLocation.lat, longitude: dropoffLocation.lng }} title="Dropoff" pinColor="red" />
+          <Marker
+            coordinate={{ latitude: dropoffLocation.lat, longitude: dropoffLocation.lng }}
+            title="Dropoff"
+            pinColor={mapTheme.mapDropoff}
+          />
         )}
         {nearbyDrivers.map((driver, index) => (
           <Marker
             key={`driver-${index}`}
             coordinate={{ latitude: driver.lat, longitude: driver.lng }}
             title="Driver"
-            pinColor="blue"
+            pinColor={mapTheme.mapDriver}
             rotation={typeof driver.heading === "number" ? driver.heading : 0}
           />
         ))}
@@ -105,8 +116,8 @@ export function RideMap({
               latitude: point.lat,
               longitude: point.lng,
             }))}
-            strokeColor="#3B82F6"
-            strokeWidth={3}
+            strokeColor={mapTheme.accent}
+            strokeWidth={4}
           />
         )}
       </MapView>

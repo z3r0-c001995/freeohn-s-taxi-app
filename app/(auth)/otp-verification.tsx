@@ -1,10 +1,16 @@
-import { Text, View, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
-import { ScreenContainer } from "@/components/screen-container";
-import { useColors } from "@/hooks/use-colors";
+import { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
+
+import { ScreenContainer } from "@/components/screen-container";
+import { AppBadge } from "@/components/ui/app-badge";
+import { AppButton } from "@/components/ui/app-button";
+import { AppCard } from "@/components/ui/app-card";
+import { AppInput } from "@/components/ui/app-input";
+import { radii, shadows } from "@/constants/design-system";
 import { IS_DRIVER_APP } from "@/constants/app-variant";
+import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useAppStore } from "@/lib/store";
 import { getDriverProfile, getUserByOpenId } from "@/lib/db-service";
 
@@ -88,26 +94,49 @@ function getFallbackDriverSession(phone: string) {
   };
 }
 
+function formatTimer(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safeSeconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const seconds = (safeSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 export default function OTPVerificationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const colors = useColors();
+  const brand = useBrandTheme();
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(110);
   const { setCurrentUser, setDriverProfile, setIsAuthenticated, persist } = useAppStore();
 
   const phone = (params.phone as string) || "";
   const role = IS_DRIVER_APP ? "driver" : "rider";
+  const maskedPhone = useMemo(() => {
+    const digits = normalizePhone(phone);
+    if (digits.length < 4) return phone;
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`.trim();
+  }, [phone]);
+
+  useEffect(() => {
+    if (IS_DRIVER_APP) return;
+    const timer = setInterval(() => {
+      setSecondsRemaining((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleVerify = async () => {
     if (!otp.trim() || otp.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit code");
+      Alert.alert("Validation", "Please enter a valid 6-digit code.");
       return;
     }
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 650));
 
       if (IS_DRIVER_APP) {
         const normalizedPhone = normalizePhone(phone);
@@ -136,16 +165,13 @@ export default function OTPVerificationScreen() {
         if (!user || user.role !== "driver") {
           Alert.alert(
             "Driver Not Registered",
-            "This driver account is not registered yet. Ask the company owner/admin to register your driver profile first.",
+            "This account is not registered for driver access. Contact company owner/admin.",
           );
           return;
         }
 
         if (!profile) {
-          Alert.alert(
-            "Driver Profile Missing",
-            "Driver profile is missing. Ask the company owner/admin to complete your registration.",
-          );
+          Alert.alert("Driver Profile Missing", "Driver profile setup is incomplete. Contact operations.");
           return;
         }
 
@@ -157,10 +183,7 @@ export default function OTPVerificationScreen() {
         return;
       }
 
-      router.push({
-        pathname: "/profile-setup",
-        params: { phone, role, otp },
-      });
+      router.push({ pathname: "/profile-setup", params: { phone, role, otp } });
     } catch (error) {
       console.warn("[auth] OTP verification failed:", error);
       Alert.alert("Error", "Failed to verify OTP");
@@ -169,66 +192,173 @@ export default function OTPVerificationScreen() {
     }
   };
 
-  const handleResend = async () => {
-    Alert.alert("Success", "Verification code sent to " + phone);
+  const handleResend = () => {
+    setSecondsRemaining(110);
+    Alert.alert("Code sent", `Verification code sent to ${phone}`);
   };
 
+  const handleOtpChange = (value: string) => {
+    setOtp(value.replace(/[^0-9]/g, "").slice(0, 6));
+  };
+
+  if (IS_DRIVER_APP) {
+    return (
+      <ScreenContainer className="bg-background" containerClassName="bg-background">
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+          <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24, gap: 16 }}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={{
+                width: 40,
+                height: 40,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: radii.pill,
+                borderWidth: 1,
+                borderColor: brand.border,
+                backgroundColor: brand.surface,
+              }}
+            >
+              <Ionicons name="arrow-back" size={20} color={brand.text} />
+            </TouchableOpacity>
+
+            <View
+              style={{
+                borderRadius: radii.xl,
+                padding: 20,
+                backgroundColor: "#0F1E4A",
+                borderWidth: 1,
+                borderColor: "#1D4ED8",
+                ...shadows.md,
+              }}
+            >
+              <Text style={{ fontSize: 26, fontWeight: "800", color: "#FFFFFF" }}>Verify Driver Login</Text>
+              <Text style={{ marginTop: 8, color: "#CBD5E1", fontSize: 14 }}>
+                Enter the OTP sent to {maskedPhone || phone}
+              </Text>
+            </View>
+
+            <AppCard>
+              <AppInput
+                label="Verification Code"
+                value={otp}
+                onChangeText={handleOtpChange}
+                keyboardType="number-pad"
+                maxLength={6}
+                placeholder="123456"
+                autoFocus
+              />
+              <View style={{ marginTop: 16 }}>
+                <AppButton
+                  label={isLoading ? "Verifying..." : "Verify & Continue"}
+                  variant="secondary"
+                  loading={isLoading}
+                  disabled={otp.length !== 6}
+                  onPress={handleVerify}
+                />
+              </View>
+              <View style={{ marginTop: 10, flexDirection: "row", justifyContent: "center", gap: 6 }}>
+                <Text style={{ fontSize: 13, color: brand.textMuted }}>Need a new code?</Text>
+                <TouchableOpacity onPress={handleResend}>
+                  <Text style={{ fontSize: 13, color: brand.accent, fontWeight: "700" }}>Resend</Text>
+                </TouchableOpacity>
+              </View>
+            </AppCard>
+          </View>
+        </ScrollView>
+      </ScreenContainer>
+    );
+  }
+
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="flex-1 justify-center px-6 gap-6">
-          {/* Back Button */}
-          <TouchableOpacity onPress={() => router.back()} className="mb-4">
-            <Ionicons name="arrow-back" size={24} color={colors.foreground} />
-          </TouchableOpacity>
-
-          {/* Header */}
-          <View className="gap-2">
-            <Text className="text-3xl font-bold text-foreground">Verify Your Phone</Text>
-            <Text className="text-base text-muted">
-              {"We've sent a code to "}{phone}
-            </Text>
-          </View>
-
-          {/* OTP Input */}
-          <View className="gap-2">
-            <Text className="text-sm font-semibold text-foreground">Verification Code</Text>
-            <TextInput
-              placeholder="000000"
-              placeholderTextColor={colors.muted}
-              value={otp}
-              onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, "").slice(0, 6))}
-              keyboardType="number-pad"
-              maxLength={6}
-              editable={!isLoading}
-              className="border border-border rounded-lg px-4 py-3 text-center text-2xl font-bold text-foreground tracking-widest"
-              style={{ borderColor: colors.border }}
-            />
-          </View>
-
-          {/* Verify Button */}
+        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 18, paddingBottom: 30 }}>
           <TouchableOpacity
-            onPress={handleVerify}
-            disabled={isLoading || otp.length !== 6}
-            className="bg-primary rounded-lg py-4 items-center"
+            onPress={() => router.back()}
             style={{
-              opacity: isLoading || otp.length !== 6 ? 0.6 : 1,
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: radii.pill,
+              borderWidth: 1,
+              borderColor: brand.border,
+              backgroundColor: brand.surface,
             }}
           >
-            <Text className="text-white font-semibold text-base">
-              {isLoading ? "Verifying..." : "Verify"}
-            </Text>
+            <Ionicons name="arrow-back" size={20} color={brand.text} />
           </TouchableOpacity>
 
-          {/* Resend Code */}
-          <View className="flex-row justify-center gap-1">
-            <Text className="text-sm text-muted">{"Didn't receive code?"}</Text>
-            <TouchableOpacity onPress={handleResend} disabled={isLoading}>
-              <Text className="text-sm font-semibold" style={{ color: colors.primary }}>
-                Resend
-              </Text>
-            </TouchableOpacity>
+          <View style={{ alignItems: "center", marginTop: 26 }}>
+            <View
+              style={{
+                width: 106,
+                height: 106,
+                borderRadius: 999,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#0A1E49",
+                ...shadows.md,
+              }}
+            >
+              <Ionicons name="mail-outline" size={48} color={brand.primary} />
+            </View>
+            <Text style={{ marginTop: 18, fontSize: 32, fontWeight: "800", color: brand.text }}>
+              Verification Code
+            </Text>
+            <Text style={{ marginTop: 8, fontSize: 14, color: brand.textMuted, textAlign: "center" }}>
+              Please enter the code sent to {maskedPhone || phone}
+            </Text>
+            <View style={{ marginTop: 10 }}>
+              <AppBadge label={formatTimer(secondsRemaining)} tone="primary" />
+            </View>
           </View>
+
+          <AppCard style={{ marginTop: 22 }}>
+            <AppInput
+              label="6-digit code"
+              value={otp}
+              onChangeText={handleOtpChange}
+              keyboardType="number-pad"
+              maxLength={6}
+              placeholder="123456"
+              autoFocus
+            />
+
+            <View style={{ flexDirection: "row", justifyContent: "center", gap: 10, marginTop: 14 }}>
+              {Array.from({ length: 6 }).map((_, index) => {
+                const hasValue = Boolean(otp[index]);
+                return (
+                  <View
+                    key={`otp-circle-${index}`}
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 999,
+                      backgroundColor: hasValue ? brand.primary : "#E2E8F0",
+                    }}
+                  />
+                );
+              })}
+            </View>
+
+            <View style={{ marginTop: 18 }}>
+              <AppButton
+                label={isLoading ? "Verifying..." : "Verify Code"}
+                loading={isLoading}
+                disabled={otp.length !== 6}
+                onPress={handleVerify}
+              />
+            </View>
+
+            <View style={{ marginTop: 10, flexDirection: "row", justifyContent: "center", gap: 6 }}>
+              <Text style={{ fontSize: 13, color: brand.textMuted }}>Didn&apos;t receive code?</Text>
+              <TouchableOpacity onPress={handleResend}>
+                <Text style={{ fontSize: 13, color: brand.accent, fontWeight: "700" }}>Resend</Text>
+              </TouchableOpacity>
+            </View>
+          </AppCard>
         </View>
       </ScrollView>
     </ScreenContainer>

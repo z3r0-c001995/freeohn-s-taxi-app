@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
-import { useColors } from "@/hooks/use-colors";
+import { AppBadge } from "@/components/ui/app-badge";
+import { AppButton } from "@/components/ui/app-button";
+import { AppCard } from "@/components/ui/app-card";
+import { AppInput } from "@/components/ui/app-input";
+import { APP_LABEL, IS_DRIVER_APP } from "@/constants/app-variant";
+import { radii, shadows } from "@/constants/design-system";
+import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useAppStore } from "@/lib/store";
 import {
@@ -26,29 +33,38 @@ import {
   setDriverOnlineStatus as setLocalDriverOnlineStatus,
   startRide as startLocalRide,
 } from "@/lib/db-service";
-import { IS_DRIVER_APP } from "@/constants/app-variant";
 
 export default function DriverDashboardScreen() {
   const router = useRouter();
-  const colors = useColors();
+  const brand = useBrandTheme();
   const { currentUser, currentLocation, setActiveRide } = useAppStore();
+  const { isTracking } = useLocationTracking();
+
   const [isOnline, setIsOnline] = useState(false);
   const [dashboard, setDashboard] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [startPin, setStartPin] = useState("");
   const [isOfflineMode, setIsOfflineMode] = useState(false);
-  const { isTracking } = useLocationTracking();
-  const now = new Date();
-  const dateLabel = now.toLocaleDateString([], {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-  const timeLabel = now.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+
+  const dateLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString([], {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+    [],
+  );
+  const timeLabel = useMemo(
+    () =>
+      new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [],
+  );
+
   const gpsLabel = currentLocation
     ? `${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`
     : "Waiting for GPS lock";
@@ -62,10 +78,12 @@ export default function DriverDashboardScreen() {
       id: ride.id.toString(),
       tripId: ride.id.toString(),
       distanceKm: 0,
+      estimatedFare: Number(ride.fareAmount ?? 0),
+      riderName: "Service Seeker",
     }));
 
     setDashboard({
-      status: { isOnline: Boolean(profile?.isOnline) },
+      status: { isOnline: Boolean(profile?.isOnline), dailyEarnings: profile?.totalEarnings ?? 0 },
       pendingRequests,
       activeTrips: localActiveTrips ?? [],
     });
@@ -92,27 +110,35 @@ export default function DriverDashboardScreen() {
       ]);
       return;
     }
+
     if (!currentUser) return;
     void loadDashboard();
+
     const timer = setInterval(() => {
       void loadDashboard();
     }, 5000);
+
     return () => clearInterval(timer);
   }, [currentUser, loadDashboard, router]);
 
+  const pendingOffer = dashboard?.pendingRequests?.[0] ?? null;
   const activeTrip = useMemo(() => dashboard?.activeTrips?.[0] ?? null, [dashboard?.activeTrips]);
+
   const pickupLocation = useMemo(() => {
-    if (!activeTrip) return undefined;
-    const lat = Number(activeTrip.pickup?.lat ?? activeTrip.pickupLat);
-    const lng = Number(activeTrip.pickup?.lng ?? activeTrip.pickupLng);
+    if (!activeTrip && !pendingOffer) return undefined;
+    const source = activeTrip ?? pendingOffer;
+    const lat = Number(source?.pickup?.lat ?? source?.pickupLat);
+    const lng = Number(source?.pickup?.lng ?? source?.pickupLng);
     return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
-  }, [activeTrip]);
+  }, [activeTrip, pendingOffer]);
+
   const dropoffLocation = useMemo(() => {
     if (!activeTrip) return undefined;
     const lat = Number(activeTrip.dropoff?.lat ?? activeTrip.dropoffLat);
     const lng = Number(activeTrip.dropoff?.lng ?? activeTrip.dropoffLng);
     return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
   }, [activeTrip]);
+
   const canMarkArrived = activeTrip?.state === "DRIVER_ASSIGNED";
   const pinRequired = activeTrip?.state === "PIN_VERIFICATION";
   const canStartTrip = activeTrip?.state === "DRIVER_ARRIVING" || pinRequired;
@@ -123,6 +149,7 @@ export default function DriverDashboardScreen() {
       setIsLoading(true);
       const next = !isOnline;
       let usedOfflineMode = false;
+
       try {
         await updateDriverStatus({ isOnline: next });
         setIsOfflineMode(false);
@@ -132,8 +159,10 @@ export default function DriverDashboardScreen() {
         setIsOfflineMode(true);
         usedOfflineMode = true;
       }
+
       setIsOnline(next);
       await loadDashboard();
+
       if (usedOfflineMode) {
         Alert.alert("Offline Mode", `Driver status updated locally: ${next ? "online" : "offline"}.`);
       }
@@ -159,7 +188,7 @@ export default function DriverDashboardScreen() {
         setIsOfflineMode(true);
       }
       await loadDashboard();
-      Alert.alert("Ride accepted", "Head to passenger pickup point.");
+      Alert.alert("Ride accepted", "Navigate to passenger pickup.");
     } catch (error) {
       Alert.alert("Accept failed", error instanceof Error ? error.message : "Try again");
     }
@@ -171,7 +200,6 @@ export default function DriverDashboardScreen() {
         await declineDriverRequest(offerId);
         setIsOfflineMode(false);
       } catch {
-        // Local mode: hiding the request from this screen only.
         setDashboard((prev: any) => ({
           ...prev,
           pendingRequests: (prev?.pendingRequests ?? []).filter((offer: any) => offer.id !== offerId),
@@ -191,7 +219,6 @@ export default function DriverDashboardScreen() {
         await driverArrived(activeTrip.id);
         setIsOfflineMode(false);
       } catch {
-        // Local mode has no arrived state; keep trip active.
         setIsOfflineMode(true);
       }
       await loadDashboard();
@@ -234,164 +261,181 @@ export default function DriverDashboardScreen() {
   };
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="gap-5 pb-8">
-          <View className="flex-row items-center justify-between">
-            <TouchableOpacity
-              onPress={() => router.back()}
-              className="w-10 h-10 rounded-full items-center justify-center"
-              style={{ backgroundColor: colors.surface }}
-            >
-              <Ionicons name="arrow-back" size={22} color={colors.foreground} />
-            </TouchableOpacity>
-            <Text className="text-lg font-bold text-foreground">Driver Dispatch</Text>
-            <View className="w-10" />
-          </View>
-
-          <View className="rounded-xl p-4 flex-row items-center justify-between" style={{ backgroundColor: colors.surface }}>
-            <View>
-              <Text className="text-xs text-muted">Time and calendar</Text>
-              <Text className="text-sm font-semibold text-foreground">{dateLabel}</Text>
-              <Text className="text-xs text-muted">{timeLabel}</Text>
+        <View style={{ gap: 16, paddingBottom: 20 }}>
+          <View
+            style={{
+              borderRadius: radii.xl,
+              padding: 18,
+              backgroundColor: "#0F1E4A",
+              ...shadows.md,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 999,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "rgba(255,255,255,0.14)",
+                }}
+              >
+                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+              <AppBadge label={isOnline ? "ONLINE" : "OFFLINE"} tone={isOnline ? "success" : "warning"} />
             </View>
-            <Ionicons name="calendar" size={20} color={colors.primary} />
+
+            <Text style={{ marginTop: 14, fontSize: 29, fontWeight: "800", color: "#FFFFFF" }}>Driver Dashboard</Text>
+            <Text style={{ marginTop: 6, fontSize: 13, color: "#CBD5E1" }}>{APP_LABEL}</Text>
+
+            <View style={{ marginTop: 12, flexDirection: "row", gap: 16 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: "#CBD5E1" }}>Today</Text>
+                <Text style={{ marginTop: 3, fontSize: 24, fontWeight: "800", color: "#FFFFFF" }}>
+                  ${(dashboard?.status?.dailyEarnings ?? 0).toFixed(2)}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: "#CBD5E1" }}>Requests</Text>
+                <Text style={{ marginTop: 3, fontSize: 24, fontWeight: "800", color: "#FFFFFF" }}>
+                  {dashboard?.pendingRequests?.length ?? 0}
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ marginTop: 14 }}>
+              <AppButton
+                label={isOnline ? "Go Offline" : "Go Online"}
+                variant={isOnline ? "secondary" : "outline"}
+                loading={isLoading}
+                onPress={toggleOnline}
+                leftIcon={<Ionicons name={isOnline ? "pause" : "play"} size={16} color={isOnline ? "#FFFFFF" : brand.accent} />}
+              />
+            </View>
           </View>
 
-          <View className="rounded-xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-            <Text className="text-base font-semibold text-foreground">Live GPS tracking details</Text>
-            <Text className="text-xs text-muted">Driver location: {gpsLabel}</Text>
-            <Text className="text-xs text-muted">Realtime tracking: {isTracking ? "active (2-5s)" : "inactive"}</Text>
-            <Text className="text-xs text-muted">Pending clients nearby: {(dashboard?.pendingRequests ?? []).length}</Text>
-          </View>
-
-          <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
+          <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
             <RideMap
               userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
               pickupLocation={pickupLocation}
               dropoffLocation={dropoffLocation}
-              style={{ height: 220 }}
+              style={{ height: 340 }}
             />
-            <View className="px-4 py-3">
-              <Text className="text-xs text-muted">
-                Live map: your position (blue), pickup (green), dropoff (red).
+
+            <View style={{ padding: 12, backgroundColor: brand.surface }}>
+              <Text style={{ fontSize: 12, color: brand.textMuted }}>GPS: {gpsLabel}</Text>
+              <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
+                Tracking: {isTracking ? "live (2-5s updates)" : "inactive"}
+              </Text>
+              <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
+                {dateLabel} • {timeLabel}
               </Text>
             </View>
           </View>
 
-          <View className="rounded-xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-            <Text className="text-base font-semibold text-foreground">Availability</Text>
-            <Text className="text-xs text-muted">
-              {isOnline ? "Online and receiving jobs" : "Offline. Tap Go Online to receive rides."}
-            </Text>
-            <TouchableOpacity
-              onPress={toggleOnline}
-              disabled={isLoading}
-              className="py-3 rounded-lg items-center justify-center"
-              style={{ backgroundColor: isOnline ? colors.error : colors.success, opacity: isLoading ? 0.6 : 1 }}
+          {pendingOffer ? (
+            <View
+              style={{
+                borderRadius: radii.lg,
+                padding: 16,
+                backgroundColor: brand.surface,
+                borderWidth: 1,
+                borderColor: brand.border,
+                ...shadows.md,
+              }}
             >
-              <Text className="text-white font-semibold">{isOnline ? "Go Offline" : "Go Online"}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {isOfflineMode && (
-            <View className="rounded-xl p-4" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-xs text-muted">
-                Offline mode active: dispatch data is syncing locally on this device.
+              <Text style={{ fontSize: 17, fontWeight: "800", color: brand.text }}>Incoming Ride Request</Text>
+              <Text style={{ marginTop: 8, fontSize: 13, color: brand.textMuted }}>
+                Rider: {pendingOffer.riderName ?? "Service Seeker"}
               </Text>
-            </View>
-          )}
-
-          <View className="rounded-xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-            <Text className="text-base font-semibold text-foreground">Incoming Requests (clients location)</Text>
-            {(dashboard?.pendingRequests ?? []).length === 0 && (
-              <Text className="text-sm text-muted">No pending requests.</Text>
-            )}
-            {(dashboard?.pendingRequests ?? []).map((offer: any) => (
-              <View key={offer.id} className="border border-border rounded-lg p-3 gap-2">
-                <Text className="text-sm text-foreground">Trip: {offer.tripId}</Text>
-                <Text className="text-xs text-muted">Distance: {offer.distanceKm.toFixed(2)} km</Text>
-                <Text className="text-xs text-muted">Window: accept quickly for best dispatch success.</Text>
-                <View className="flex-row gap-2">
-                  <TouchableOpacity
-                    onPress={() => onAccept(offer.id)}
-                    className="flex-1 py-2 rounded-lg items-center justify-center"
-                    style={{ backgroundColor: colors.success }}
-                  >
-                    <Text className="text-white font-semibold">Accept</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => onDecline(offer.id)}
-                    className="flex-1 py-2 rounded-lg items-center justify-center"
-                    style={{ backgroundColor: colors.error }}
-                  >
-                    <Text className="text-white font-semibold">Decline</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
-
-          {activeTrip && (
-            <View className="rounded-xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-base font-semibold text-foreground">Active Trip</Text>
-              <Text className="text-sm text-muted">Trip: {activeTrip.id}</Text>
-              <Text className="text-sm text-muted">State: {activeTrip.state}</Text>
-              <Text className="text-sm text-muted">Pickup: {activeTrip.pickup?.address}</Text>
-              <Text className="text-sm text-muted">Dropoff: {activeTrip.dropoff?.address}</Text>
-              <Text className="text-xs text-muted">
-                Fare snapshot: {activeTrip.fare?.currency ?? "USD"} {activeTrip.fare?.total?.toFixed?.(2) ?? "--"}
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
+                Distance to pickup: {(pendingOffer.distanceKm ?? 0).toFixed(2)} km
+              </Text>
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
+                Estimated fare: ${(pendingOffer.estimatedFare ?? 0).toFixed(2)}
               </Text>
 
-              {canMarkArrived && (
-                <TouchableOpacity
-                  onPress={onArrived}
-                  className="py-3 rounded-lg items-center justify-center"
-                  style={{ backgroundColor: colors.primary }}
-                >
-                  <Text className="text-white font-semibold">Mark Arrived</Text>
-                </TouchableOpacity>
-              )}
-
-              {pinRequired && (
-                <TextInput
-                  value={startPin}
-                  onChangeText={setStartPin}
-                  placeholder="Enter passenger PIN"
-                  placeholderTextColor={colors.muted}
-                  className="border border-border rounded-lg px-3 py-2 text-foreground"
-                  keyboardType="numeric"
-                  maxLength={4}
+              <View style={{ marginTop: 12, flexDirection: "row", gap: 10 }}>
+                <AppButton
+                  label="Accept"
+                  variant="secondary"
+                  fullWidth={false}
+                  style={{ flex: 1 }}
+                  onPress={() => onAccept(pendingOffer.id)}
                 />
-              )}
-
-              {canStartTrip && (
-                <TouchableOpacity
-                  onPress={onStartTrip}
-                  className="py-3 rounded-lg items-center justify-center"
-                  style={{ backgroundColor: colors.primary }}
-                >
-                  <Text className="text-white font-semibold">Start Trip</Text>
-                </TouchableOpacity>
-              )}
-
-              {canCompleteTrip && (
-                <TouchableOpacity
-                  onPress={onCompleteTrip}
-                  className="py-3 rounded-lg items-center justify-center"
-                  style={{ backgroundColor: colors.success }}
-                >
-                  <Text className="text-white font-semibold">Complete Trip</Text>
-                </TouchableOpacity>
-              )}
+                <AppButton
+                  label="Decline"
+                  variant="outline"
+                  fullWidth={false}
+                  style={{ flex: 1 }}
+                  onPress={() => onDecline(pendingOffer.id)}
+                />
+              </View>
             </View>
+          ) : (
+            <AppCard tone="muted">
+              <Text style={{ fontSize: 13, color: brand.textMuted }}>No pending ride requests.</Text>
+            </AppCard>
           )}
 
-          <View className="rounded-xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-            <Text className="text-base font-semibold text-foreground">Fleet management</Text>
-            <Text className="text-xs text-muted">Vehicle and driver verification are managed by company owner/admin.</Text>
-            <Text className="text-xs text-muted">Use this console for availability, dispatch, navigation, and trip completion.</Text>
-          </View>
+          {activeTrip ? (
+            <AppCard>
+              <Text style={{ fontSize: 17, fontWeight: "800", color: brand.text }}>Trip in Progress</Text>
+              <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>Trip: {activeTrip.id}</Text>
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>State: {activeTrip.state}</Text>
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
+                Pickup: {activeTrip.pickup?.address ?? "-"}
+              </Text>
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
+                Dropoff: {activeTrip.dropoff?.address ?? "-"}
+              </Text>
+
+              {pinRequired ? (
+                <View style={{ marginTop: 10 }}>
+                  <AppInput
+                    label="Passenger PIN (optional)"
+                    placeholder="Enter 4-digit PIN if required"
+                    value={startPin}
+                    onChangeText={setStartPin}
+                    keyboardType="numeric"
+                    maxLength={4}
+                  />
+                </View>
+              ) : null}
+
+              <View style={{ marginTop: 12, gap: 8 }}>
+                {canMarkArrived ? <AppButton label="Arrived at Pickup" variant="secondary" onPress={onArrived} /> : null}
+                {canStartTrip ? <AppButton label="Start Trip" variant="primary" onPress={onStartTrip} /> : null}
+                {canCompleteTrip ? <AppButton label="End Trip" variant="success" onPress={onCompleteTrip} /> : null}
+              </View>
+            </AppCard>
+          ) : null}
+
+          <AppCard tone="muted">
+            <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Earnings & Operations</Text>
+            <Text style={{ marginTop: 6, fontSize: 12, color: brand.textMuted }}>
+              View daily totals, weekly trend, and trip-by-trip earnings breakdown.
+            </Text>
+            <View style={{ marginTop: 10 }}>
+              <AppButton
+                label="Open Earnings"
+                variant="outline"
+                onPress={() => router.push("/driver-earnings" as never)}
+              />
+            </View>
+          </AppCard>
+
+          {isOfflineMode ? (
+            <AppCard tone="muted">
+              <Text style={{ fontSize: 12, color: brand.textMuted }}>
+                Offline mode active. Dispatch updates are syncing locally on this device.
+              </Text>
+            </AppCard>
+          ) : null}
         </View>
       </ScrollView>
     </ScreenContainer>

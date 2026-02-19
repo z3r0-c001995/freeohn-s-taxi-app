@@ -1,18 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
-import { useColors } from "@/hooks/use-colors";
+import { AppBadge } from "@/components/ui/app-badge";
+import { AppButton } from "@/components/ui/app-button";
+import { AppCard } from "@/components/ui/app-card";
+import { AppInput } from "@/components/ui/app-input";
+import { radii, shadows } from "@/constants/design-system";
+import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useTripRealtime } from "@/hooks/use-trip-realtime";
 import { cancelTrip, rateTrip, sendSos, shareTrip } from "@/lib/ride-hailing-api";
 
 export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const colors = useColors();
+  const brand = useBrandTheme();
   const { trip, driverLocation, isLoading, transport } = useTripRealtime(id ?? null);
+
   const [rating, setRating] = useState("5");
   const [feedback, setFeedback] = useState("");
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
@@ -20,14 +27,9 @@ export default function TripDetailsScreen() {
 
   const canCancel = useMemo(() => {
     if (!trip?.state) return false;
-    return [
-      "CREATED",
-      "MATCHING",
-      "DRIVER_ASSIGNED",
-      "DRIVER_ARRIVING",
-      "PIN_VERIFICATION",
-    ].includes(trip.state);
+    return ["CREATED", "MATCHING", "DRIVER_ASSIGNED", "DRIVER_ARRIVING", "PIN_VERIFICATION"].includes(trip.state);
   }, [trip?.state]);
+
   const isMatchingState = trip?.state === "CREATED" || trip?.state === "MATCHING";
 
   useEffect(() => {
@@ -35,12 +37,13 @@ export default function TripDetailsScreen() {
       setMatchingElapsedSec(0);
       return;
     }
+
     const start = new Date(trip.createdAt).getTime();
     const update = () => {
-      const now = Date.now();
-      const elapsed = Math.max(0, Math.floor((now - start) / 1000));
+      const elapsed = Math.max(0, Math.floor((Date.now() - start) / 1000));
       setMatchingElapsedSec(elapsed);
     };
+
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
@@ -58,6 +61,7 @@ export default function TripDetailsScreen() {
   const dropoffLocation = trip?.dropoff
     ? { lat: Number(trip.dropoff.lat), lng: Number(trip.dropoff.lng) }
     : undefined;
+
   const liveDriverMarker =
     driverLocation && Number.isFinite(driverLocation.lat) && Number.isFinite(driverLocation.lng)
       ? [{ lat: driverLocation.lat, lng: driverLocation.lng, heading: driverLocation.heading }]
@@ -78,7 +82,7 @@ export default function TripDetailsScreen() {
     try {
       const shared = await shareTrip(id);
       const url = typeof window === "undefined" ? shared.url : `${window.location.origin}${shared.url}`;
-      Alert.alert("Share Link", url);
+      Alert.alert("Share link", url);
     } catch (error) {
       Alert.alert("Error", error instanceof Error ? error.message : "Unable to share route");
     }
@@ -121,163 +125,224 @@ export default function TripDetailsScreen() {
     }
   };
 
+  const stateLabel = trip?.state ?? (isLoading ? "Loading..." : "Unknown");
+
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="gap-5 pb-8">
-          <View className="flex-row items-center justify-between">
-            <TouchableOpacity
-              onPress={() => router.back()}
-              className="w-10 h-10 rounded-full items-center justify-center"
-              style={{ backgroundColor: colors.surface }}
-            >
-              <Ionicons name="arrow-back" size={22} color={colors.foreground} />
-            </TouchableOpacity>
-            <Text className="text-lg font-bold text-foreground">Trip Status</Text>
-            <TouchableOpacity
-              onPress={() => router.push("/safety-center" as never)}
-              className="w-10 h-10 rounded-full items-center justify-center"
-              style={{ backgroundColor: colors.surface }}
-            >
-              <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          <View className="rounded-xl p-4" style={{ backgroundColor: colors.surface }}>
-            <Text className="text-sm text-muted">Trip ID</Text>
-            <Text className="text-base font-semibold text-foreground">{id ?? "-"}</Text>
-            <Text className="text-sm text-muted mt-3">Lifecycle state</Text>
-            <Text className="text-lg font-bold" style={{ color: colors.primary }}>
-              {trip?.state ?? (isLoading ? "Loading..." : "Unknown")}
-            </Text>
-            <Text className="text-xs text-muted mt-2">
-              Realtime: {transport === "websocket" ? "WebSocket" : transport === "sse" ? "SSE fallback" : "Polling"}
-            </Text>
-          </View>
-
-          {isMatchingState && (
-            <View className="rounded-xl p-4" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-lg font-semibold text-foreground">Finding nearby drivers...</Text>
-              <Text className="text-sm text-muted mt-1">
-                Stay on this screen while dispatch sends offers to online drivers.
-              </Text>
-              <Text className="text-3xl font-bold mt-3" style={{ color: colors.primary }}>
-                {matchingCounterLabel}
-              </Text>
-              <Text className="text-xs text-muted mt-1">Matching timer</Text>
+        <View style={{ gap: 16, paddingBottom: 20 }}>
+          <View
+            style={{
+              borderRadius: radii.xl,
+              backgroundColor: "#0A1E49",
+              padding: 18,
+              ...shadows.md,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 999,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "rgba(255,255,255,0.14)",
+                }}
+              >
+                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+              <AppBadge
+                label={transport === "websocket" ? "Realtime: WebSocket" : transport === "sse" ? "Realtime: SSE" : "Realtime: Polling"}
+                tone="primary"
+              />
             </View>
-          )}
+            <Text style={{ marginTop: 14, fontSize: 27, fontWeight: "800", color: "#FFFFFF" }}>Trip Status</Text>
+            <Text style={{ marginTop: 5, color: "#CBD5E1", fontSize: 13 }}>Trip ID: {id ?? "-"}</Text>
+            <Text style={{ marginTop: 3, color: "#CBD5E1", fontSize: 13 }}>State: {stateLabel}</Text>
+          </View>
 
-          {(pickupLocation || dropoffLocation) && (
-            <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.surface }}>
+          {isMatchingState ? (
+            <AppCard tone="primary">
+              <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>Looking for nearby drivers...</Text>
+              <Text style={{ marginTop: 5, fontSize: 13, color: brand.textMuted }}>
+                Stay on this screen while we dispatch your request.
+              </Text>
+              <View style={{ marginTop: 18, alignItems: "center", justifyContent: "center" }}>
+                <View
+                  style={{
+                    width: 106,
+                    height: 106,
+                    borderRadius: 999,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "rgba(249,115,22,0.15)",
+                    borderWidth: 1,
+                    borderColor: "rgba(249,115,22,0.5)",
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 54,
+                      height: 54,
+                      borderRadius: 999,
+                      backgroundColor: brand.primary,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="car-sport" size={24} color="#FFFFFF" />
+                  </View>
+                </View>
+                <Text style={{ marginTop: 14, fontSize: 32, fontWeight: "800", color: brand.text }}>{matchingCounterLabel}</Text>
+                <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>matching timer</Text>
+              </View>
+              <View style={{ marginTop: 14 }}>
+                <AppButton label="Cancel Request" variant="outline" onPress={handleCancel} />
+              </View>
+            </AppCard>
+          ) : null}
+
+          {(pickupLocation || dropoffLocation) ? (
+            <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
               <RideMap
                 userLocation={pickupLocation}
                 pickupLocation={pickupLocation}
                 dropoffLocation={dropoffLocation}
                 nearbyDrivers={liveDriverMarker}
-                style={{ height: 240 }}
+                style={{ height: 320 }}
               />
-              <View className="px-4 py-3">
-                <Text className="text-xs text-muted">
-                  Driver GPS:{" "}
-                  {driverLocation
-                    ? `${driverLocation.lat.toFixed(5)}, ${driverLocation.lng.toFixed(5)}`
-                    : "Waiting for live updates"}
+              <View style={{ padding: 12, backgroundColor: brand.surface }}>
+                <Text style={{ fontSize: 12, color: brand.textMuted }}>
+                  Driver GPS: {driverLocation ? `${driverLocation.lat.toFixed(5)}, ${driverLocation.lng.toFixed(5)}` : "Waiting for live updates"}
                 </Text>
               </View>
             </View>
-          )}
+          ) : null}
 
-          <View className="rounded-xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-            <Text className="text-sm text-muted">Pickup</Text>
-            <Text className="text-foreground">{trip?.pickup?.address ?? "-"}</Text>
-            <Text className="text-sm text-muted mt-2">Dropoff</Text>
-            <Text className="text-foreground">{trip?.dropoff?.address ?? "-"}</Text>
-            <Text className="text-sm text-muted mt-2">Fare</Text>
-            <Text className="text-xl font-bold text-foreground">
-              {trip?.fare?.currency ?? "USD"} {trip?.fare?.total?.toFixed ? trip.fare.total.toFixed(2) : "--"}
-            </Text>
-          </View>
+          <AppCard>
+            <Text style={{ fontSize: 14, color: brand.textMuted }}>Pickup</Text>
+            <Text style={{ marginTop: 3, fontSize: 15, color: brand.text }}>{trip?.pickup?.address ?? "-"}</Text>
+            <Text style={{ marginTop: 10, fontSize: 14, color: brand.textMuted }}>Dropoff</Text>
+            <Text style={{ marginTop: 3, fontSize: 15, color: brand.text }}>{trip?.dropoff?.address ?? "-"}</Text>
 
-          {trip?.driver && (
-            <View className="rounded-xl p-4 gap-2" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-lg font-semibold text-foreground">Assigned Driver</Text>
-              <Text className="text-sm text-muted">Rating: {trip.driver.rating ?? "N/A"}</Text>
-              <Text className="text-sm text-muted">
+            <View style={{ marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View>
+                <Text style={{ fontSize: 12, color: brand.textMuted }}>Total fare</Text>
+                <Text style={{ marginTop: 3, fontSize: 30, fontWeight: "800", color: brand.text }}>
+                  {trip?.fare?.currency ?? "USD"} {trip?.fare?.total?.toFixed ? trip.fare.total.toFixed(2) : "--"}
+                </Text>
+              </View>
+              <AppBadge label={stateLabel} tone="neutral" />
+            </View>
+          </AppCard>
+
+          {trip?.driver ? (
+            <AppCard tone="accent">
+              <Text style={{ fontSize: 17, fontWeight: "800", color: brand.text }}>Driver Assigned</Text>
+              <Text style={{ marginTop: 6, fontSize: 14, color: brand.text }}>Name: {trip.driver.name ?? "Driver"}</Text>
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>Rating: {trip.driver.rating ?? "N/A"}</Text>
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
                 Vehicle: {trip.driver.vehicle?.make} {trip.driver.vehicle?.model}
               </Text>
-              <Text className="text-sm text-muted">Color: {trip.driver.vehicle?.color}</Text>
-              <Text className="text-sm text-muted">Plate: {trip.driver.vehicle?.plateNumber}</Text>
-            </View>
-          )}
+              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
+                Plate: {trip.driver.vehicle?.plateNumber} • {trip.driver.vehicle?.color}
+              </Text>
 
-          {trip?.startPin && (
-            <View className="rounded-xl p-4 items-center" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-sm text-muted">Trip start PIN</Text>
-              <Text className="text-4xl font-bold tracking-widest" style={{ color: colors.primary }}>
+              <View style={{ marginTop: 12, flexDirection: "row", gap: 10 }}>
+                <AppButton
+                  label="Call"
+                  variant="secondary"
+                  fullWidth={false}
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    void Linking.openURL("tel:+260000000000");
+                  }}
+                  leftIcon={<Ionicons name="call" size={16} color="#FFFFFF" />}
+                />
+                <AppButton
+                  label="Message"
+                  variant="outline"
+                  fullWidth={false}
+                  style={{ flex: 1 }}
+                  onPress={() => router.push("/(tabs)/chat")}
+                  leftIcon={<Ionicons name="chatbubble" size={16} color={brand.accent} />}
+                />
+              </View>
+            </AppCard>
+          ) : null}
+
+          {trip?.startPin ? (
+            <AppCard tone="muted">
+              <Text style={{ fontSize: 13, color: brand.textMuted }}>Share this PIN with driver at pickup</Text>
+              <Text style={{ marginTop: 6, fontSize: 40, fontWeight: "800", color: brand.primary, letterSpacing: 8 }}>
                 {trip.startPin}
               </Text>
-            </View>
-          )}
+            </AppCard>
+          ) : null}
 
-          <View className="flex-row gap-3">
-            <TouchableOpacity
-              onPress={handleShareRoute}
-              className="flex-1 py-3 rounded-lg items-center justify-center"
-              style={{ backgroundColor: colors.primary }}
-            >
-              <Text className="text-white font-semibold">Share Route</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSOS}
-              className="flex-1 py-3 rounded-lg items-center justify-center"
-              style={{ backgroundColor: colors.error }}
-            >
-              <Text className="text-white font-semibold">SOS</Text>
-            </TouchableOpacity>
-          </View>
-
-          {canCancel && (
-            <TouchableOpacity
-              onPress={handleCancel}
-              className="py-3 rounded-lg items-center justify-center"
-              style={{ backgroundColor: colors.warning }}
-            >
-              <Text className="text-white font-semibold">Cancel Trip</Text>
-            </TouchableOpacity>
-          )}
-
-          {trip?.state === "COMPLETED" && (
-            <View className="rounded-xl p-4 gap-3" style={{ backgroundColor: colors.surface }}>
-              <Text className="text-lg font-semibold text-foreground">Rate your driver</Text>
-              <TextInput
-                value={rating}
-                onChangeText={setRating}
-                keyboardType="numeric"
-                maxLength={1}
-                className="border border-border rounded-lg px-3 py-2 text-foreground"
-                placeholder="1-5"
-                placeholderTextColor={colors.muted}
-              />
-              <TextInput
-                value={feedback}
-                onChangeText={setFeedback}
-                className="border border-border rounded-lg px-3 py-2 text-foreground"
-                placeholder="Optional feedback"
-                placeholderTextColor={colors.muted}
-              />
+          <AppCard tone="muted">
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Safety Center</Text>
               <TouchableOpacity
-                disabled={isSubmittingRating}
-                onPress={handleRate}
-                className="py-3 rounded-lg items-center justify-center"
-                style={{ backgroundColor: colors.success, opacity: isSubmittingRating ? 0.6 : 1 }}
+                onPress={handleSOS}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 999,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "#FEE2E2",
+                }}
               >
-                <Text className="text-white font-semibold">
-                  {isSubmittingRating ? "Submitting..." : "Submit Rating"}
-                </Text>
+                <Ionicons name="warning" size={18} color={brand.danger} />
               </TouchableOpacity>
             </View>
-          )}
+            <Text style={{ marginTop: 6, fontSize: 12, color: brand.textMuted }}>
+              Share route with trusted contacts or trigger emergency support.
+            </Text>
+            <View style={{ marginTop: 10 }}>
+              <AppButton label="Share Live Route" variant="outline" onPress={handleShareRoute} />
+            </View>
+          </AppCard>
+
+          {canCancel ? <AppButton label="Cancel Trip" variant="danger" onPress={handleCancel} /> : null}
+
+          {trip?.state === "COMPLETED" ? (
+            <AppCard>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>Rate your driver</Text>
+              <View style={{ marginTop: 12 }}>
+                <AppInput
+                  label="Rating (1-5)"
+                  value={rating}
+                  onChangeText={setRating}
+                  keyboardType="numeric"
+                  maxLength={1}
+                />
+              </View>
+              <View style={{ marginTop: 10 }}>
+                <AppInput
+                  label="Feedback (optional)"
+                  value={feedback}
+                  onChangeText={setFeedback}
+                  placeholder="Share trip feedback"
+                />
+              </View>
+
+              <View style={{ marginTop: 14 }}>
+                <AppButton
+                  label={isSubmittingRating ? "Submitting..." : "Submit Rating"}
+                  loading={isSubmittingRating}
+                  onPress={handleRate}
+                />
+              </View>
+
+              <View style={{ marginTop: 10 }}>
+                <AppButton label="View Payment Summary" variant="outline" onPress={() => router.push("/payment" as never)} />
+              </View>
+            </AppCard>
+          ) : null}
         </View>
       </ScrollView>
     </ScreenContainer>

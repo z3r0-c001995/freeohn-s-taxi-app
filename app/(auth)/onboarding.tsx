@@ -1,113 +1,158 @@
-import { Alert, Text, View, TouchableOpacity, ScrollView } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ScreenContainer } from "@/components/screen-container";
-import { useColors } from "@/hooks/use-colors";
 import { Ionicons } from "@expo/vector-icons";
+
+import { ScreenContainer } from "@/components/screen-container";
+import { AppButton } from "@/components/ui/app-button";
+import { AppCard } from "@/components/ui/app-card";
 import { APP_LABEL, IS_DRIVER_APP } from "@/constants/app-variant";
+import { radii, shadows } from "@/constants/design-system";
+import { useBrandTheme } from "@/hooks/use-brand-theme";
 
-export default function OnboardingScreen() {
+function DriverOnboarding() {
   const router = useRouter();
-  const colors = useColors();
-
-  const handlePrimaryPress = () => {
-    router.push({
-      pathname: "/phone-entry",
-      params: { role: IS_DRIVER_APP ? "driver" : "rider" },
-    });
-  };
-
-  const handleDriverInfo = () =>
-    Alert.alert("Driver onboarding", "Driver accounts are registered by company owner/admin.");
+  const brand = useBrandTheme();
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View className="flex-1 justify-center items-center px-6 gap-8">
-          {/* Header */}
-          <View className="items-center gap-2">
-            <Text className="text-5xl font-bold text-foreground">Freeohn's</Text>
-            <Text className="text-lg text-muted text-center">{APP_LABEL}</Text>
-          </View>
-
-          {/* Primary app flow */}
-          <View className="w-full gap-4 mt-8">
-            <TouchableOpacity
-              onPress={handlePrimaryPress}
-              activeOpacity={0.8}
-              className="bg-surface border border-border rounded-2xl p-6 gap-4"
-            >
-              <View className="flex-row items-center gap-4">
-                <View
-                  className="w-16 h-16 rounded-full items-center justify-center"
-                  style={{ backgroundColor: colors.primary }}
-                >
-                  <Ionicons name={IS_DRIVER_APP ? "speedometer" : "car"} size={32} color={colors.background} />
+        <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24, gap: 18 }}>
+          <View
+            style={{
+              borderRadius: radii.xl,
+              padding: 24,
+              borderWidth: 1,
+              borderColor: brand.border,
+              backgroundColor: "#0F1E4A",
+              ...shadows.md,
+            }}
+          >
+            <Text style={{ fontSize: 32, fontWeight: "800", color: "#FFFFFF" }}>Freeohn&apos;s</Text>
+            <Text style={{ marginTop: 6, fontSize: 15, color: "#CBD5E1" }}>{APP_LABEL}</Text>
+            <View style={{ marginTop: 22, gap: 12 }}>
+              {[
+                "Owner-managed driver access",
+                "Dispatch and trip controls",
+                "Live GPS and earnings summary",
+              ].map((item) => (
+                <View key={item} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Ionicons name="checkmark-circle" size={20} color={brand.accent} />
+                  <Text style={{ color: "#E2E8F0", fontSize: 14 }}>{item}</Text>
                 </View>
-                <View className="flex-1">
-                  <Text className="text-xl font-bold text-foreground">
-                    {IS_DRIVER_APP ? "Driver Portal" : "Service Seeker"}
-                  </Text>
-                  <Text className="text-sm text-muted">
-                    {IS_DRIVER_APP ? "Manage incoming rides" : "Book rides easily"}
-                  </Text>
-                </View>
-              </View>
-              <Text className="text-sm text-muted leading-relaxed">
-                {IS_DRIVER_APP
-                  ? "Driver app for dispatch requests, trip controls, and live trip updates."
-                  : "Request a ride, track your driver in real-time, and reach your destination safely."}
-              </Text>
-            </TouchableOpacity>
-
-            {!IS_DRIVER_APP && (
-              <TouchableOpacity
-                onPress={handleDriverInfo}
-                activeOpacity={0.8}
-                className="bg-surface border border-border rounded-2xl p-6 gap-4"
-              >
-                <View className="flex-row items-center gap-4">
-                  <View
-                    className="w-16 h-16 rounded-full items-center justify-center"
-                    style={{ backgroundColor: colors.success }}
-                  >
-                    <Ionicons name="person" size={32} color={colors.background} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-xl font-bold text-foreground">Driver Access</Text>
-                    <Text className="text-sm text-muted">Owner-managed onboarding</Text>
-                  </View>
-                </View>
-                <Text className="text-sm text-muted leading-relaxed">
-                  Drivers are verified and registered by company owner/admin before they can go online.
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Features */}
-          <View className="w-full gap-3 mt-8">
-            <Text className="text-sm font-semibold text-foreground">Why Choose RideHaul?</Text>
-            <View className="gap-2">
-              <View className="flex-row items-center gap-3">
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                <Text className="text-sm text-foreground flex-1">100% Local & Offline</Text>
-              </View>
-              <View className="flex-row items-center gap-3">
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                <Text className="text-sm text-foreground flex-1">Real-Time Tracking</Text>
-              </View>
-              <View className="flex-row items-center gap-3">
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                <Text className="text-sm text-foreground flex-1">Instant Messaging</Text>
-              </View>
-              <View className="flex-row items-center gap-3">
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                <Text className="text-sm text-foreground flex-1">Fair Pricing</Text>
-              </View>
+              ))}
             </View>
+          </View>
+
+          <AppCard>
+            <Text style={{ fontSize: 22, fontWeight: "700", color: brand.text }}>Driver Access</Text>
+            <Text style={{ marginTop: 6, fontSize: 14, color: brand.textMuted }}>
+              Sign in using the phone number registered by company operations.
+            </Text>
+            <View style={{ marginTop: 16 }}>
+              <AppButton
+                label="Continue to Driver Login"
+                variant="secondary"
+                onPress={() => {
+                  router.push({ pathname: "/phone-entry", params: { role: "driver" } });
+                }}
+              />
+            </View>
+          </AppCard>
+        </View>
+      </ScrollView>
+    </ScreenContainer>
+  );
+}
+
+function SeekerOnboarding() {
+  const router = useRouter();
+  const brand = useBrandTheme();
+
+  return (
+    <ScreenContainer className="bg-background" containerClassName="bg-background">
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+        <View style={{ flex: 1, justifyContent: "space-between", paddingBottom: 28 }}>
+          <View
+            style={{
+              minHeight: 318,
+              borderBottomLeftRadius: 110,
+              borderBottomRightRadius: 110,
+              backgroundColor: "#0A1E49",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              paddingBottom: 22,
+              paddingHorizontal: 24,
+              overflow: "hidden",
+            }}
+          >
+            <View
+              style={{
+                position: "absolute",
+                width: 260,
+                height: 260,
+                borderRadius: 999,
+                backgroundColor: "rgba(249, 115, 22, 0.35)",
+                top: -120,
+                right: -50,
+              }}
+            />
+            <View
+              style={{
+                width: 96,
+                height: 96,
+                borderRadius: 32,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "rgba(255,255,255,0.08)",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.2)",
+              }}
+            >
+              <Text style={{ fontSize: 52, fontWeight: "800", color: brand.primary }}>F</Text>
+            </View>
+            <Text style={{ marginTop: 14, color: "#F8FAFC", fontWeight: "800", fontSize: 28 }}>
+              Freeohn&apos;s Ride App
+            </Text>
+            <Text style={{ marginTop: 6, color: "#CBD5E1", fontSize: 14 }}>
+              Fast, reliable rides with live tracking.
+            </Text>
+          </View>
+
+          <View style={{ paddingHorizontal: 24, marginTop: -10, gap: 16 }}>
+            <AppCard>
+              <Text style={{ fontSize: 24, fontWeight: "700", color: brand.text }}>Welcome</Text>
+              <Text style={{ marginTop: 8, color: brand.textMuted, fontSize: 14 }}>
+                Register once and book rides with transparent fare, ETA, and safety tools.
+              </Text>
+              <View style={{ marginTop: 18 }}>
+                <AppButton
+                  label="Get Started"
+                  onPress={() => {
+                    router.push({ pathname: "/phone-entry", params: { role: "rider" } });
+                  }}
+                />
+              </View>
+              <View style={{ marginTop: 10 }}>
+                <AppButton
+                  label="Driver Portal"
+                  variant="outline"
+                  onPress={() => {
+                    router.push({ pathname: "/phone-entry", params: { role: "driver" } });
+                  }}
+                />
+              </View>
+            </AppCard>
           </View>
         </View>
       </ScrollView>
     </ScreenContainer>
   );
+}
+
+export default function OnboardingScreen() {
+  if (IS_DRIVER_APP) {
+    return <DriverOnboarding />;
+  }
+
+  return <SeekerOnboarding />;
 }
