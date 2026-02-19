@@ -31,7 +31,7 @@ const bundleId =
     .join(".") || "space.manus.app";
 const variantSuffix = appVariant === "driver" ? "driver" : "seeker";
 const appScheme = appVariant === "driver" ? "freeohndriver" : "freeohnseeker";
-const appName = appVariant === "driver" ? "Freeohn Driver" : "Freeohn Service Seeker";
+const appName = appVariant === "driver" ? "Freeohn Driver" : "Freeohn's Ride App";
 const appSlug = appVariant === "driver" ? "freeohn-driver" : "freeohn-seeker";
 const packageId = `${bundleId}.${variantSuffix}`;
 const seekerProjectId = process.env.EAS_PROJECT_ID_SEEKER ?? "3f0b926d-bba9-4ea9-81fd-b188040f405a";

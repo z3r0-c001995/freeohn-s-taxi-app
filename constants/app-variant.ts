@@ -28,4 +28,4 @@ export const APP_VARIANT: AppVariant = nativeVariant ?? envVariant ?? "seeker";
 export const IS_DRIVER_APP = APP_VARIANT === "driver";
 export const IS_SEEKER_APP = APP_VARIANT === "seeker";
 
-export const APP_LABEL = IS_DRIVER_APP ? "Freeohn Driver" : "Freeohn Service Seeker";
+export const APP_LABEL = IS_DRIVER_APP ? "Freeohn Driver" : "Freeohn's Ride App";
