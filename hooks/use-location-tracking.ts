@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
+import { Platform } from "react-native";
 import * as Location from "expo-location";
 import { useAppStore } from "@/lib/store";
 import { updateDriverLocation, insertLocationHistory } from "@/lib/db-service";
@@ -107,7 +108,7 @@ export function useLocationTracking() {
         return;
       }
 
-      if (config.enableBackground) {
+      if (config.enableBackground && Platform.OS !== "web") {
         const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
         if (backgroundStatus !== "granted") {
           console.warn("Background location permission denied, using foreground only");

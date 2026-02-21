@@ -1,19 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Image, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
-import { AppBadge } from "@/components/ui/app-badge";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
 import { APP_LABEL, IS_DRIVER_APP, IS_SEEKER_APP } from "@/constants/app-variant";
+import { APP_LOGO } from "@/constants/brand-assets";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useAppStore } from "@/lib/store";
+import { trpc } from "@/lib/trpc";
 import { calculateDistance } from "@/lib/ride-utils";
 import {
   getAvailableRides,
@@ -71,6 +72,7 @@ function mapRemoteTripToLocal(remoteTrip: any) {
 export default function HomeScreen() {
   const router = useRouter();
   const brand = useBrandTheme();
+  const defaultLocation = { latitude: -15.4162, longitude: 28.3115 };
   const {
     currentUser,
     setCurrentLocation,
@@ -88,9 +90,12 @@ export default function HomeScreen() {
   } = useAppStore();
 
   const { isTracking } = useLocationTracking();
+  const trpcUtils = trpc.useUtils();
   const [availableRides, setAvailableRides] = useState<any[]>([]);
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
   const [lastNearbyUpdate, setLastNearbyUpdate] = useState<string | null>(null);
+  const [currentLocationAddress, setCurrentLocationAddress] = useState("Detecting your location...");
+  const lastResolvedLocationKeyRef = useRef("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -200,15 +205,56 @@ export default function HomeScreen() {
     };
   }, [currentLocation, currentUser?.role]);
 
+  useEffect(() => {
+    if (!currentLocation || currentUser?.role !== "rider") {
+      setCurrentLocationAddress("Enable location to use precise pickup.");
+      return;
+    }
+
+    const locationKey = `${currentLocation.latitude.toFixed(4)},${currentLocation.longitude.toFixed(4)}`;
+    if (locationKey === lastResolvedLocationKeyRef.current) {
+      return;
+    }
+    lastResolvedLocationKeyRef.current = locationKey;
+
+    let cancelled = false;
+    const resolve = async () => {
+      try {
+        const response = await trpcUtils.maps.reverseGeocode.fetch({
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude,
+        });
+        if (!cancelled) {
+          setCurrentLocationAddress(response.address || "Current location");
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentLocationAddress("Current location");
+        }
+      }
+    };
+
+    void resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLocation, currentUser?.role, trpcUtils]);
+
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
         const location = await Location.getCurrentPositionAsync({});
         setCurrentLocation({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+      } else if (!currentLocation) {
+        // Keep app usable for web testing when browser geolocation is blocked.
+        setCurrentLocation(defaultLocation);
       }
     } catch (error) {
       console.error("Location permission error:", error);
+      if (!currentLocation) {
+        setCurrentLocation(defaultLocation);
+      }
     }
   };
 
@@ -254,13 +300,17 @@ export default function HomeScreen() {
 
     try {
       const newStatus = !driverProfile?.isOnline;
+      const sourceLocation = currentLocation ?? defaultLocation;
       try {
         await updateDriverStatus({
           isOnline: newStatus,
-          lat: currentLocation?.latitude,
-          lng: currentLocation?.longitude,
+          lat: newStatus ? sourceLocation.latitude : undefined,
+          lng: newStatus ? sourceLocation.longitude : undefined,
         });
       } catch {
+        if (Platform.OS === "web") {
+          throw new Error("Unable to reach backend to update status.");
+        }
         await setDriverOnlineStatus(currentUser.id.toString(), newStatus);
       }
 
@@ -406,26 +456,95 @@ export default function HomeScreen() {
               >
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: "#CBD5E1", fontSize: 13 }}>Welcome back</Text>
-                    <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 30, fontWeight: "800" }}>{currentUser.name}</Text>
-                    <Text style={{ marginTop: 4, color: "#CBD5E1", fontSize: 12 }}>{APP_LABEL}</Text>
+                    <Text style={{ color: "#CBD5E1", fontSize: 13, fontWeight: "600" }}>Welcome back</Text>
+                    <Text style={{ marginTop: 5, color: "#FFFFFF", fontSize: 30, fontWeight: "800" }}>{currentUser.name}</Text>
+                    <View style={{ marginTop: 5, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Image
+                        source={APP_LOGO}
+                        style={{ width: 20, height: 20, borderRadius: 6, backgroundColor: "#FFFFFF" }}
+                      />
+                      <Text style={{ color: "#CBD5E1", fontSize: 12 }}>{APP_LABEL}</Text>
+                    </View>
                   </View>
-                  <View
+                  <TouchableOpacity
+                    onPress={() => router.push("/(tabs)/settings")}
                     style={{
-                      width: 44,
-                      height: 44,
+                      width: 48,
+                      height: 48,
                       borderRadius: 999,
                       alignItems: "center",
                       justifyContent: "center",
-                      backgroundColor: "rgba(255,255,255,0.14)",
+                      backgroundColor: "rgba(255,255,255,0.16)",
+                      borderWidth: 1,
+                      borderColor: "rgba(255,255,255,0.18)",
                     }}
                   >
-                    <Ionicons name="person" size={20} color="#FFFFFF" />
+                    <Ionicons name="person" size={21} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ marginTop: 14, flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      borderRadius: 999,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      backgroundColor: "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <Ionicons name="calendar-outline" size={14} color="#CBD5E1" />
+                    <Text style={{ color: "#CBD5E1", fontSize: 12, fontWeight: "600" }}>
+                      {dateLabel} • {timeLabel}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      borderRadius: 999,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      backgroundColor: "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <Ionicons name="navigate-circle-outline" size={14} color="#CBD5E1" />
+                    <Text style={{ color: "#CBD5E1", fontSize: 12, fontWeight: "600" }}>GPS {isTracking ? "active" : "idle"}</Text>
                   </View>
                 </View>
-                <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Text style={{ color: "#CBD5E1", fontSize: 13 }}>{dateLabel} • {timeLabel}</Text>
-                  <AppBadge label={`${nearbyDrivers.length} drivers nearby`} tone="primary" />
+
+                <View style={{ marginTop: 14, flexDirection: "row", gap: 10 }}>
+                  <View
+                    style={{
+                      flex: 1,
+                      borderRadius: radii.lg,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      backgroundColor: "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <Text style={{ color: "#CBD5E1", fontSize: 11 }}>Nearby drivers</Text>
+                    <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>
+                      {nearbyDrivers.length}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      flex: 1,
+                      borderRadius: radii.lg,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      backgroundColor: "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <Text style={{ color: "#CBD5E1", fontSize: 11 }}>Tracking status</Text>
+                    <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>
+                      {isTracking ? "Online" : "Idle"}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -440,7 +559,7 @@ export default function HomeScreen() {
               <AppCard>
                 <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>Book a Ride</Text>
                 <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>
-                  Pickup: {gpsLabel}
+                  Pickup: {currentLocationAddress}
                 </Text>
                 <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
                   Live tracking: {isTracking ? "Active" : "Idle"}
@@ -478,10 +597,10 @@ export default function HomeScreen() {
                 <AppCard tone="accent">
                   <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Current Trip</Text>
                   <Text style={{ marginTop: 8, fontSize: 13, color: brand.textMuted }}>
-                    Pickup: {activeRide.pickupAddress ?? `${activeRide.pickupLat}, ${activeRide.pickupLng}`}
+                    Pickup: {activeRide.pickupAddress ?? "Pickup location selected"}
                   </Text>
                   <Text style={{ marginTop: 3, fontSize: 13, color: brand.textMuted }}>
-                    Dropoff: {activeRide.dropoffAddress ?? `${activeRide.dropoffLat}, ${activeRide.dropoffLng}`}
+                    Dropoff: {activeRide.dropoffAddress ?? "Dropoff location selected"}
                   </Text>
                   <Text style={{ marginTop: 8, fontSize: 24, fontWeight: "800", color: brand.text }}>
                     ${activeRide.fareAmount.toFixed(2)}
@@ -490,9 +609,11 @@ export default function HomeScreen() {
                   <View style={{ marginTop: 12 }}>
                     <AppButton label="Track Trip" variant="secondary" onPress={handleOpenTripCenter} />
                   </View>
-                  <View style={{ marginTop: 8 }}>
-                    <AppButton label="Chat Driver" variant="outline" onPress={() => router.push("/(tabs)/chat")} />
-                  </View>
+                  {activeRide.driverId ? (
+                    <View style={{ marginTop: 8 }}>
+                      <AppButton label="Chat Driver" variant="outline" onPress={() => router.push("/(tabs)/chat")} />
+                    </View>
+                  ) : null}
                 </AppCard>
               ) : null}
 

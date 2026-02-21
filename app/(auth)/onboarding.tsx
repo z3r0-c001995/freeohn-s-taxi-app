@@ -1,4 +1,4 @@
-import { ScrollView, Text, View } from "react-native";
+import { Image, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -6,6 +6,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
 import { APP_LABEL, IS_DRIVER_APP } from "@/constants/app-variant";
+import { APP_LOGO } from "@/constants/brand-assets";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 
@@ -27,7 +28,14 @@ function DriverOnboarding() {
               ...shadows.md,
             }}
           >
-            <Text style={{ fontSize: 32, fontWeight: "800", color: "#FFFFFF" }}>Freeohn&apos;s</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Image
+                source={APP_LOGO}
+                style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: "#FFFFFF" }}
+                resizeMode="cover"
+              />
+              <Text style={{ fontSize: 30, fontWeight: "800", color: "#FFFFFF" }}>Freeohn&apos;s</Text>
+            </View>
             <Text style={{ marginTop: 6, fontSize: 15, color: "#CBD5E1" }}>{APP_LABEL}</Text>
             <View style={{ marginTop: 22, gap: 12 }}>
               {[
@@ -96,20 +104,18 @@ function SeekerOnboarding() {
                 right: -50,
               }}
             />
-            <View
+            <Image
+              source={APP_LOGO}
               style={{
-                width: 96,
-                height: 96,
-                borderRadius: 32,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "rgba(255,255,255,0.08)",
+                width: 102,
+                height: 102,
+                borderRadius: 30,
+                backgroundColor: "#FFFFFF",
                 borderWidth: 1,
                 borderColor: "rgba(255,255,255,0.2)",
               }}
-            >
-              <Text style={{ fontSize: 52, fontWeight: "800", color: brand.primary }}>F</Text>
-            </View>
+              resizeMode="cover"
+            />
             <Text style={{ marginTop: 14, color: "#F8FAFC", fontWeight: "800", fontSize: 28 }}>
               Freeohn&apos;s Ride App
             </Text>

@@ -7,6 +7,10 @@ import { logger } from "../modules/observability/logger";
 const ORS_BASE_URL = (process.env.ORS_BASE_URL || "https://api.openrouteservice.org").replace(/\/$/, "");
 const ORS_TIMEOUT_MS = Number(process.env.ORS_TIMEOUT_MS || 4500);
 const ORS_COUNTRY_BIAS = (process.env.ORS_COUNTRY_BIAS || "ZM").trim().toUpperCase();
+const NOMINATIM_BASE_URL = (process.env.NOMINATIM_BASE_URL || "https://nominatim.openstreetmap.org").replace(/\/$/, "");
+const NOMINATIM_USER_AGENT =
+  process.env.NOMINATIM_USER_AGENT ||
+  "FreeohnsRideApp/1.0 (maps fallback geocoding; contact support@freeohns.com)";
 const MAPS_CACHE_TTL_MS = Number(process.env.MAPS_CACHE_TTL_MS || 45_000);
 const MAPS_RATE_WINDOW_MS = Number(process.env.MAPS_RATE_WINDOW_MS || 60_000);
 const MAPS_RATE_MAX = Number(process.env.MAPS_RATE_MAX || 120);
@@ -25,6 +29,18 @@ type OrsFeature = {
     country?: string;
     country_a?: string;
   };
+};
+
+type NominatimSearchItem = {
+  place_id?: string | number;
+  display_name?: string;
+  name?: string;
+  lat?: string;
+  lon?: string;
+};
+
+type NominatimReverseResponse = {
+  display_name?: string;
 };
 
 type CacheEntry = {
@@ -46,6 +62,28 @@ const fallbackPlaces = [
   { name: "Levy Junction", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4169, lng: 28.2866 },
   { name: "Manda Hill", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4064, lng: 28.3036 },
   { name: "Arcades Shopping Centre", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.3984, lng: 28.3223 },
+  { name: "Cairo Road", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4164, lng: 28.2847 },
+  { name: "University Teaching Hospital", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.416, lng: 28.3007 },
+  { name: "Levy Mwanawasa University Teaching Hospital", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.3532, lng: 28.3101 },
+  { name: "Intercity Bus Terminal", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4134, lng: 28.2819 },
+  { name: "Soweto Market", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4296, lng: 28.2923 },
+  { name: "Lusaka City Market", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4154, lng: 28.2861 },
+  { name: "Longacres Mall", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4089, lng: 28.2933 },
+  { name: "Crossroads Shopping Centre", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4508, lng: 28.2858 },
+  { name: "Cosmopolitan Mall", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.398, lng: 28.3358 },
+  { name: "Pinnacle Mall", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4004, lng: 28.3296 },
+  { name: "UNZA", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.3874, lng: 28.3235 },
+  { name: "Mulungushi International Conference Centre", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.3918, lng: 28.3187 },
+  { name: "Parays Game Ranch", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4328, lng: 28.2871 },
+  { name: "Kabulonga", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4289, lng: 28.3273 },
+  { name: "Woodlands", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4377, lng: 28.3011 },
+  { name: "Kamwala", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4241, lng: 28.2966 },
+  { name: "Roma", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.3859, lng: 28.3389 },
+  { name: "Chilenje", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4437, lng: 28.3078 },
+  { name: "Chelstone", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.3595, lng: 28.3688 },
+  { name: "Immigration Headquarters", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4247, lng: 28.2874 },
+  { name: "Immunization Centre", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4142, lng: 28.2989 },
+  { name: "Boma", locality: "Lusaka", region: "Lusaka", country: "Zambia", lat: -15.4069, lng: 28.2948 },
   { name: "Kitwe City Centre", locality: "Kitwe", region: "Copperbelt", country: "Zambia", lat: -12.8024, lng: 28.2132 },
   { name: "Ndola City Centre", locality: "Ndola", region: "Copperbelt", country: "Zambia", lat: -12.9587, lng: 28.6366 },
   { name: "Livingstone Town Centre", locality: "Livingstone", region: "Southern", country: "Zambia", lat: -17.8419, lng: 25.8544 },
@@ -247,8 +285,23 @@ function fallbackPlacesAutocomplete(query: string, location?: { lat: number; lng
   }
 
   const normalized = query.toLowerCase();
-  const placeMatches = fallbackPlaces
-    .filter((place) => `${place.name} ${place.locality} ${place.region}`.toLowerCase().includes(normalized))
+  const queryTokens = normalized.split(/\s+/).filter(Boolean);
+  const strictMatches = fallbackPlaces.filter((place) => {
+    const candidate = `${place.name} ${place.locality} ${place.region}`.toLowerCase();
+    return queryTokens.every((token) => candidate.includes(token));
+  });
+  const relaxedMatches =
+    strictMatches.length > 0
+      ? strictMatches
+      : fallbackPlaces.filter((place) => {
+          const candidate = `${place.name} ${place.locality} ${place.region}`.toLowerCase();
+          return queryTokens.every((token) => {
+            const relaxedToken = token.length >= 4 ? token.slice(0, 3) : token;
+            return candidate.includes(relaxedToken);
+          });
+        });
+
+  const placeMatches = relaxedMatches
     .map((place) => ({
       ...formatFallbackPrediction({
         placeId: `fallback_${place.name.replace(/\s+/g, "_").toLowerCase()}`,
@@ -268,6 +321,74 @@ function fallbackPlacesAutocomplete(query: string, location?: { lat: number; lng
   return [...fallbackResults, ...placeMatches].slice(0, 8);
 }
 
+function formatNominatimPrediction(item: NominatimSearchItem, fallbackIndex: number) {
+  const lat = Number(item.lat);
+  const lng = Number(item.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  const description = item.display_name || item.name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  const parts = description.split(",").map((part) => part.trim());
+  const mainText = item.name || parts[0] || description;
+  const secondaryText = parts.slice(1).join(", ") || description;
+  const placeId = item.place_id ? String(item.place_id) : `osm_${fallbackIndex}_${lat}_${lng}`;
+
+  return {
+    place_id: placeId,
+    description,
+    structured_formatting: {
+      main_text: mainText,
+      secondary_text: secondaryText,
+    },
+    geometry: {
+      location: {
+        lat,
+        lng,
+      },
+    },
+    formatted_address: description,
+  };
+}
+
+async function fetchNominatimAutocomplete(query: string, location?: { lat: number; lng: number }) {
+  try {
+    const params = new URLSearchParams({
+      format: "jsonv2",
+      q: query,
+      limit: "8",
+      addressdetails: "1",
+      "accept-language": "en",
+    });
+
+    if (ORS_COUNTRY_BIAS) {
+      params.set("countrycodes", ORS_COUNTRY_BIAS.toLowerCase());
+    }
+
+    if (location) {
+      // Bias scoring around user's area while still allowing broader results.
+      params.set("lat", String(location.lat));
+      params.set("lon", String(location.lng));
+    }
+
+    const response = await axios.get<NominatimSearchItem[]>(`${NOMINATIM_BASE_URL}/search?${params}`, {
+      timeout: ORS_TIMEOUT_MS,
+      headers: {
+        "User-Agent": NOMINATIM_USER_AGENT,
+      },
+    });
+
+    return (response.data ?? [])
+      .map((item, index) => formatNominatimPrediction(item, index))
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  } catch (error) {
+    logger.warn("maps.nominatim.autocomplete.failed", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    return [];
+  }
+}
+
 function fallbackReverseGeocode(input: { lat: number; lng: number }) {
   const nearest = fallbackPlaces
     .map((place) => ({
@@ -283,6 +404,34 @@ function fallbackReverseGeocode(input: { lat: number; lng: number }) {
   }
 
   return { address: `${input.lat.toFixed(6)}, ${input.lng.toFixed(6)}` };
+}
+
+async function fetchNominatimReverse(input: { lat: number; lng: number }) {
+  try {
+    const params = new URLSearchParams({
+      format: "jsonv2",
+      lat: String(input.lat),
+      lon: String(input.lng),
+      zoom: "18",
+      addressdetails: "1",
+      "accept-language": "en",
+    });
+
+    const response = await axios.get<NominatimReverseResponse>(`${NOMINATIM_BASE_URL}/reverse?${params}`, {
+      timeout: ORS_TIMEOUT_MS,
+      headers: {
+        "User-Agent": NOMINATIM_USER_AGENT,
+      },
+    });
+
+    const address = response.data?.display_name?.trim();
+    return address ? { address } : null;
+  } catch (error) {
+    logger.warn("maps.nominatim.reverse.failed", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    return null;
+  }
 }
 
 function fallbackRoute(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
@@ -328,9 +477,11 @@ export const mapsRouter = router({
 
       const apiKey = getOrsApiKey();
       if (!apiKey) {
-        const fallback = fallbackPlacesAutocomplete(query, input.location);
-        setCached(cacheKey, fallback);
-        return fallback;
+        const nominatimResults = await fetchNominatimAutocomplete(query, input.location);
+        const finalResults =
+          nominatimResults.length > 0 ? nominatimResults : fallbackPlacesAutocomplete(query, input.location);
+        setCached(cacheKey, finalResults);
+        return finalResults;
       }
 
       try {
@@ -356,14 +507,28 @@ export const mapsRouter = router({
           .map((feature, index) => formatAutocompletePrediction(feature, index))
           .filter((feature): feature is NonNullable<typeof feature> => feature !== null);
 
-        const finalResults = results.length > 0 ? results : fallbackPlacesAutocomplete(query, input.location);
+        const finalResults =
+          results.length > 0
+            ? results
+            : (() => {
+                return fallbackPlacesAutocomplete(query, input.location);
+              })();
+        if (finalResults.length === 0) {
+          const nominatimResults = await fetchNominatimAutocomplete(query, input.location);
+          if (nominatimResults.length > 0) {
+            setCached(cacheKey, nominatimResults);
+            return nominatimResults;
+          }
+        }
         setCached(cacheKey, finalResults);
         return finalResults;
       } catch (error) {
         logger.warn("maps.placesAutocomplete.failed", {
           message: error instanceof Error ? error.message : "unknown",
         });
-        const fallback = fallbackPlacesAutocomplete(query, input.location);
+        const nominatimResults = await fetchNominatimAutocomplete(query, input.location);
+        const fallback =
+          nominatimResults.length > 0 ? nominatimResults : fallbackPlacesAutocomplete(query, input.location);
         setCached(cacheKey, fallback);
         return fallback;
       }
@@ -382,7 +547,8 @@ export const mapsRouter = router({
 
       const apiKey = getOrsApiKey();
       if (!apiKey) {
-        const fallback = fallbackReverseGeocode(input);
+        const nominatimResult = await fetchNominatimReverse(input);
+        const fallback = nominatimResult ?? fallbackReverseGeocode(input);
         setCached(cacheKey, fallback);
         return fallback;
       }
@@ -403,7 +569,7 @@ export const mapsRouter = router({
         });
         const best = response.data.features?.[0];
         const result = {
-          address: best?.properties?.label || fallbackReverseGeocode(input).address,
+          address: best?.properties?.label || (await fetchNominatimReverse(input))?.address || fallbackReverseGeocode(input).address,
         };
         setCached(cacheKey, result);
         return result;
@@ -411,7 +577,8 @@ export const mapsRouter = router({
         logger.warn("maps.reverseGeocode.failed", {
           message: error instanceof Error ? error.message : "unknown",
         });
-        const fallback = fallbackReverseGeocode(input);
+        const nominatimResult = await fetchNominatimReverse(input);
+        const fallback = nominatimResult ?? fallbackReverseGeocode(input);
         setCached(cacheKey, fallback);
         return fallback;
       }

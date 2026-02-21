@@ -1,4 +1,4 @@
-package space.manus.ride.hailing.app.t20260201043515.seeker
+package space.manus.ride.hailing.app.t20260201043515.driver
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

@@ -223,12 +223,22 @@ export default function RequestRideScreen() {
     setDropoffAddress(place.formatted_address);
   };
 
+  const handlePickupInputChange = (text: string) => {
+    setPickupAddress(text);
+    setPickupLocation(null);
+  };
+
+  const handleDropoffInputChange = (text: string) => {
+    setDropoffAddress(text);
+    setDropoffLocation(null);
+  };
+
   const resolveAddress = async (location: LatLng) => {
     try {
       const response = await trpcUtils.maps.reverseGeocode.fetch(location);
-      return response.address || `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+      return response.address || "Selected location";
     } catch {
-      return `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+      return "Selected location";
     }
   };
 
@@ -402,6 +412,8 @@ export default function RequestRideScreen() {
                 placeholder="Search pickup location"
                 onPlaceSelect={handlePickupSelect}
                 userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+                value={pickupAddress}
+                onChangeText={handlePickupInputChange}
               />
             </View>
 
@@ -411,6 +423,8 @@ export default function RequestRideScreen() {
                 placeholder="Search dropoff location"
                 onPlaceSelect={handleDropoffSelect}
                 userLocation={pickupLocation || undefined}
+                value={dropoffAddress}
+                onChangeText={handleDropoffInputChange}
               />
             </View>
           </AppCard>

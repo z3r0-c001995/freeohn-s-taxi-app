@@ -7,7 +7,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Freeohn's Ride App</string>
+    <string>Freeohn Driver</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -27,14 +27,14 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>freeohnseeker</string>
-          <string>space.manus.ride.hailing.app.t20260201043515.seeker</string>
+          <string>freeohndriver</string>
+          <string>space.manus.ride.hailing.app.t20260201043515.driver</string>
         </array>
       </dict>
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>exp+freeohn-seeker</string>
+          <string>exp+freeohn-driver</string>
         </array>
       </dict>
     </array>

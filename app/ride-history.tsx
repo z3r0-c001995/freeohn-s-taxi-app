@@ -98,10 +98,10 @@ export default function RideHistoryScreen() {
                   {open ? (
                     <View style={{ marginTop: 10, gap: 4 }}>
                       <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                        Pickup: {ride.pickupAddress ?? `${ride.pickupLat}, ${ride.pickupLng}`}
+                        Pickup: {ride.pickupAddress ?? "Pickup location selected"}
                       </Text>
                       <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                        Dropoff: {ride.dropoffAddress ?? `${ride.dropoffLat}, ${ride.dropoffLng}`}
+                        Dropoff: {ride.dropoffAddress ?? "Dropoff location selected"}
                       </Text>
                       <Text style={{ fontSize: 12, color: brand.textMuted }}>
                         Distance: {ride.distanceMeters ? `${(ride.distanceMeters / 1000).toFixed(1)} km` : "--"}

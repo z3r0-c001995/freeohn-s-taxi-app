@@ -40,12 +40,12 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="freeohnseeker"/>
-        <data android:scheme="exp+freeohn-seeker"/>
+        <data android:scheme="freeohndriver"/>
+        <data android:scheme="exp+freeohn-driver"/>
       </intent-filter>
       <intent-filter android:autoVerify="true" data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="freeohnseeker" android:host="*"/>
+        <data android:scheme="freeohndriver" android:host="*"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>

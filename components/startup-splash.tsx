@@ -1,5 +1,6 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { APP_LABEL, IS_DRIVER_APP } from "@/constants/app-variant";
+import { APP_LOGO } from "@/constants/brand-assets";
 import { driverTheme, riderTheme } from "@/constants/design-system";
 
 export function StartupSplash() {
@@ -10,7 +11,7 @@ export function StartupSplash() {
       <View style={[styles.glowCircleTop, { backgroundColor: "rgba(249, 115, 22, 0.38)" }]} />
       <View style={[styles.glowCircleBottom, { backgroundColor: "rgba(30, 64, 175, 0.34)" }]} />
       <View style={[styles.logoContainer, { borderColor: "rgba(255,255,255,0.16)" }]}>
-        <Text style={[styles.logoLetter, { color: brand.primary }]}>F</Text>
+        <Image source={APP_LOGO} style={styles.logoImage} resizeMode="cover" />
       </View>
       <Text style={styles.title}>{APP_LABEL}</Text>
       <Text style={styles.subtitle}>
@@ -55,9 +56,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 24,
   },
-  logoLetter: {
-    fontSize: 54,
-    fontWeight: "800",
+  logoImage: {
+    width: 104,
+    height: 104,
+    borderRadius: 28,
+    backgroundColor: "#FFFFFF",
   },
   title: {
     fontSize: 28,

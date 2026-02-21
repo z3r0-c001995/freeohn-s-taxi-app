@@ -9,16 +9,25 @@ interface PlaceSearchInputProps {
   onPlaceSelect: (place: PlaceDetails) => void;
   userLocation?: LatLng;
   style?: any;
+  value?: string;
+  onChangeText?: (text: string) => void;
 }
 
-export function PlaceSearchInput({ placeholder, onPlaceSelect, userLocation, style }: PlaceSearchInputProps) {
+export function PlaceSearchInput({
+  placeholder,
+  onPlaceSelect,
+  userLocation,
+  style,
+  value,
+  onChangeText,
+}: PlaceSearchInputProps) {
   const [query, setQuery] = useState("");
   const [predictions, setPredictions] = useState<PlaceAutocompletePrediction[]>([]);
   const [showResults, setShowResults] = useState(false);
 
   const debouncedQuery = useDebounce(query, 300);
 
-  const { data: autocompleteData, isLoading } = trpc.maps.placesAutocomplete.useQuery(
+  const { data: autocompleteData, isLoading, error } = trpc.maps.placesAutocomplete.useQuery(
     {
       query: debouncedQuery,
       location: userLocation,
@@ -34,6 +43,12 @@ export function PlaceSearchInput({ placeholder, onPlaceSelect, userLocation, sty
       setShowResults(true);
     }
   }, [autocompleteData]);
+
+  useEffect(() => {
+    if (typeof value === "string" && value !== query) {
+      setQuery(value);
+    }
+  }, [value, query]);
 
   const handleSelect = async (prediction: PlaceAutocompletePrediction) => {
     const details: PlaceDetails = {
@@ -53,6 +68,7 @@ export function PlaceSearchInput({ placeholder, onPlaceSelect, userLocation, sty
         value={query}
         onChangeText={(text) => {
           setQuery(text);
+          onChangeText?.(text);
           if (text.length <= 2) {
             setPredictions([]);
             setShowResults(false);
@@ -97,8 +113,11 @@ export function PlaceSearchInput({ placeholder, onPlaceSelect, userLocation, sty
         />
       )}
       {isLoading && <Text style={{ padding: 8, color: "#666" }}>Searching...</Text>}
-      {!isLoading && debouncedQuery.length > 2 && predictions.length === 0 && (
+      {!isLoading && !error && debouncedQuery.length > 2 && predictions.length === 0 && (
         <Text style={{ padding: 8, color: "#666" }}>No matches found</Text>
+      )}
+      {!isLoading && !!error && debouncedQuery.length > 2 && (
+        <Text style={{ padding: 8, color: "#B45309" }}>Search unavailable. Please try again.</Text>
       )}
     </View>
   );

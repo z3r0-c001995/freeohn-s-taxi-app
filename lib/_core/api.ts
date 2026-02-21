@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiBaseUrl } from "@/constants/oauth";
 import * as Auth from "./auth";
+import { useAppStore } from "@/lib/store";
 
 type ApiResponse<T> = {
   data?: T;
@@ -16,6 +17,13 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
 
   const tryAttachDevIdentityHeader = async () => {
     try {
+      const stateUser = useAppStore.getState().currentUser as { id?: number; role?: string } | null;
+      if (stateUser?.id && stateUser?.role) {
+        headers["x-dev-user-id"] = String(stateUser.id);
+        headers["x-dev-user-role"] = String(stateUser.role);
+        return;
+      }
+
       const userRaw =
         Platform.OS === "web"
           ? typeof window !== "undefined"
@@ -65,12 +73,22 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
   console.log("[API] Full URL:", url);
 
   try {
+    const controller = new AbortController();
+    const timeoutMs = Number(process.env.EXPO_PUBLIC_API_TIMEOUT_MS || 15000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     console.log("[API] Making request...");
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: "include",
-    });
+    const response = await (async () => {
+      try {
+        return await fetch(url, {
+          ...options,
+          headers,
+          credentials: "include",
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    })();
 
     console.log("[API] Response status:", response.status, response.statusText);
     const responseHeaders = Object.fromEntries(response.headers.entries());
@@ -106,6 +124,9 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
     console.log("[API] Text response received");
     return (text ? JSON.parse(text) : {}) as T;
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Request timed out. Please check backend/server connection.");
+    }
     console.error("[API] Request failed:", error);
     if (error instanceof Error) {
       throw error;

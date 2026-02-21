@@ -101,8 +101,6 @@ async function startServer() {
     res.json({ ok: true, timestamp: Date.now() });
   });
 
-  app.use("/api", createRideHailingRouter());
-
   app.use(
     "/api/trpc",
     createExpressMiddleware({
@@ -110,6 +108,10 @@ async function startServer() {
       createContext,
     }),
   );
+
+  // Mount tRPC before the authenticated REST router so public map procedures
+  // (autocomplete/reverse geocode) are reachable from web booking screens.
+  app.use("/api", createRideHailingRouter());
 
   registerRealtimeGateway(server, corsAllowList);
 

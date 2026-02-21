@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
@@ -14,6 +15,7 @@ import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useAppStore } from "@/lib/store";
+import { trpc } from "@/lib/trpc";
 import {
   acceptDriverRequest,
   completeTrip,
@@ -37,14 +39,17 @@ import {
 export default function DriverDashboardScreen() {
   const router = useRouter();
   const brand = useBrandTheme();
-  const { currentUser, currentLocation, setActiveRide } = useAppStore();
+  const trpcUtils = trpc.useUtils();
+  const { currentUser, currentLocation, setCurrentLocation, setActiveRide } = useAppStore();
   const { isTracking } = useLocationTracking();
+  const defaultLocation = { latitude: -15.4162, longitude: 28.3115 };
 
   const [isOnline, setIsOnline] = useState(false);
   const [dashboard, setDashboard] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [startPin, setStartPin] = useState("");
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [locationLabel, setLocationLabel] = useState("Resolving location...");
 
   const dateLabel = useMemo(
     () =>
@@ -68,6 +73,30 @@ export default function DriverDashboardScreen() {
   const gpsLabel = currentLocation
     ? `${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`
     : "Waiting for GPS lock";
+
+  useEffect(() => {
+    let cancelled = false;
+    const resolveAddress = async () => {
+      const source = currentLocation ?? defaultLocation;
+      try {
+        const result = await trpcUtils.maps.reverseGeocode.fetch({
+          lat: source.latitude,
+          lng: source.longitude,
+        });
+        if (!cancelled) {
+          setLocationLabel(result.address || "Current location");
+        }
+      } catch {
+        if (!cancelled) {
+          setLocationLabel("Current location");
+        }
+      }
+    };
+    void resolveAddress();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLocation, trpcUtils]);
 
   const loadDashboardLocal = useCallback(async () => {
     if (!currentUser) return;
@@ -148,12 +177,46 @@ export default function DriverDashboardScreen() {
     try {
       setIsLoading(true);
       const next = !isOnline;
+      let sourceLocation = currentLocation ?? null;
+
+      if (next && !sourceLocation) {
+        try {
+          const permission = await Location.requestForegroundPermissionsAsync();
+          if (permission.status === "granted") {
+            const position = await Location.getCurrentPositionAsync({});
+            sourceLocation = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            };
+            setCurrentLocation(sourceLocation);
+          }
+        } catch {
+          // keep fallback below
+        }
+      }
+
+      if (next && !sourceLocation) {
+        sourceLocation = defaultLocation;
+      }
+      const effectiveLocation = sourceLocation ?? defaultLocation;
+
       let usedOfflineMode = false;
 
       try {
-        await updateDriverStatus({ isOnline: next });
+        await updateDriverStatus({
+          isOnline: next,
+          ...(next
+            ? {
+                lat: effectiveLocation.latitude,
+                lng: effectiveLocation.longitude,
+              }
+            : {}),
+        });
         setIsOfflineMode(false);
       } catch (error) {
+        if (Platform.OS === "web") {
+          throw error;
+        }
         if (!currentUser) throw error;
         await setLocalDriverOnlineStatus(currentUser.id.toString(), next);
         setIsOfflineMode(true);
@@ -172,6 +235,37 @@ export default function DriverDashboardScreen() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+
+    const heartbeat = async () => {
+      const source = currentLocation ?? defaultLocation;
+      try {
+        await updateDriverStatus({
+          isOnline: true,
+          lat: source.latitude,
+          lng: source.longitude,
+        });
+        if (!cancelled) {
+          setIsOfflineMode(false);
+        }
+      } catch {
+        // No-op: dashboard polling/local fallback still handles UI.
+      }
+    };
+
+    void heartbeat();
+    const timer = setInterval(() => {
+      void heartbeat();
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [currentLocation, isOnline]);
 
   const onAccept = async (offerId: string) => {
     try {
@@ -327,7 +421,10 @@ export default function DriverDashboardScreen() {
             />
 
             <View style={{ padding: 12, backgroundColor: brand.surface }}>
-              <Text style={{ fontSize: 12, color: brand.textMuted }}>GPS: {gpsLabel}</Text>
+              <Text style={{ fontSize: 12, color: brand.textMuted }}>Location: {locationLabel}</Text>
+              {Platform.OS !== "web" ? (
+                <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>GPS: {gpsLabel}</Text>
+              ) : null}
               <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
                 Tracking: {isTracking ? "live (2-5s updates)" : "inactive"}
               </Text>

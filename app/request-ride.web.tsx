@@ -5,85 +5,107 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
+import { PlaceSearchInput } from "@/components/places/PlaceSearchInput";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
-import { AppInput } from "@/components/ui/app-input";
 import { AppBadge } from "@/components/ui/app-badge";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
+import { trpc } from "@/lib/trpc";
 import { useAppStore } from "@/lib/store";
 import { createRide } from "@/lib/db-service";
+import { calculateDistance } from "@/lib/ride-utils";
 import { createTrip, getNearbyDrivers } from "@/lib/ride-hailing-api";
 import { calculateFare } from "@/shared/constants/fare";
-import type { NearbyDriverMarker } from "@/lib/maps/map-types";
+import type { LatLng, NearbyDriverMarker, PlaceDetails } from "@/lib/maps/map-types";
 
 type RideType = "standard" | "premium";
 
 export default function RequestRideScreenWeb() {
   const router = useRouter();
   const brand = useBrandTheme();
+  const trpcUtils = trpc.useUtils();
   const { currentUser, currentLocation, setActiveRide } = useAppStore();
 
-  const [pickupLat, setPickupLat] = useState("");
-  const [pickupLng, setPickupLng] = useState("");
-  const [dropoffLat, setDropoffLat] = useState("");
-  const [dropoffLng, setDropoffLng] = useState("");
+  const [pickupLocation, setPickupLocation] = useState<LatLng | null>(null);
+  const [dropoffLocation, setDropoffLocation] = useState<LatLng | null>(null);
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [rideType, setRideType] = useState<RideType>("standard");
   const [isRequesting, setIsRequesting] = useState(false);
-  const [distance, setDistance] = useState(0);
+  const [distanceKm, setDistanceKm] = useState(0);
   const [fare, setFare] = useState(0);
   const [etaSeconds, setEtaSeconds] = useState(0);
   const [nearbyCount, setNearbyCount] = useState(0);
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
+  const [routePolyline, setRoutePolyline] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
-    if (currentLocation) {
-      setPickupLat(currentLocation.latitude.toString());
-      setPickupLng(currentLocation.longitude.toString());
+  const { data: routeData } = trpc.maps.computeRoute.useQuery(
+    {
+      origin: pickupLocation!,
+      destination: dropoffLocation!,
+      travelMode: "DRIVE",
+    },
+    {
+      enabled: !!pickupLocation && !!dropoffLocation,
+    },
+  );
+
+  const resolveAddress = async (location: LatLng) => {
+    try {
+      const response = await trpcUtils.maps.reverseGeocode.fetch(location);
+      return response.address || "Selected location";
+    } catch {
+      return "Selected location";
     }
-  }, [currentLocation]);
-
-  const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
   };
 
   useEffect(() => {
-    const pLat = parseFloat(pickupLat);
-    const pLng = parseFloat(pickupLng);
-    const dLat = parseFloat(dropoffLat);
-    const dLng = parseFloat(dropoffLng);
+    if (!currentLocation || pickupLocation) return;
 
-    if (!Number.isFinite(pLat) || !Number.isFinite(pLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
-      setDistance(0);
-      setFare(0);
+    const seedPickup = async () => {
+      const location = { lat: currentLocation.latitude, lng: currentLocation.longitude };
+      setPickupLocation(location);
+      setPickupAddress(await resolveAddress(location));
+    };
+
+    void seedPickup();
+  }, [currentLocation, pickupLocation]);
+
+  useEffect(() => {
+    if (!pickupLocation || !dropoffLocation) {
+      setDistanceKm(0);
       setEtaSeconds(0);
+      setFare(0);
+      setRoutePolyline(undefined);
       return;
     }
 
-    const distanceKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
-    const durationSeconds = Math.max(180, Math.round((distanceKm / 35) * 3600));
-    setDistance(distanceKm);
-    setEtaSeconds(durationSeconds);
-    setFare(calculateFare(distanceKm, durationSeconds / 60, rideType));
-  }, [pickupLat, pickupLng, dropoffLat, dropoffLng, rideType]);
+    if (routeData) {
+      const nextDistanceKm = routeData.distanceMeters / 1000;
+      const nextEtaSeconds = routeData.durationSeconds;
+      setDistanceKm(nextDistanceKm);
+      setEtaSeconds(nextEtaSeconds);
+      setFare(calculateFare(nextDistanceKm, nextEtaSeconds / 60, rideType));
+      setRoutePolyline(routeData.encodedPolyline || undefined);
+      return;
+    }
+
+    const fallbackDistanceKm = calculateDistance(
+      pickupLocation.lat,
+      pickupLocation.lng,
+      dropoffLocation.lat,
+      dropoffLocation.lng,
+    );
+    const fallbackEta = Math.max(180, Math.round((fallbackDistanceKm / 35) * 3600));
+    setDistanceKm(fallbackDistanceKm);
+    setEtaSeconds(fallbackEta);
+    setFare(calculateFare(fallbackDistanceKm, fallbackEta / 60, rideType));
+    setRoutePolyline(undefined);
+  }, [dropoffLocation, pickupLocation, rideType, routeData]);
 
   useEffect(() => {
-    const pLat = parseFloat(pickupLat);
-    const pLng = parseFloat(pickupLng);
-
-    if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) {
+    if (!pickupLocation) {
       setNearbyCount(0);
       setNearbyDrivers([]);
       return;
@@ -93,7 +115,11 @@ export default function RequestRideScreenWeb() {
 
     const fetchNearby = async () => {
       try {
-        const response = await getNearbyDrivers({ pickup: { lat: pLat, lng: pLng }, radiusKm: 6, limit: 20 });
+        const response = await getNearbyDrivers({
+          pickup: pickupLocation,
+          radiusKm: 6,
+          limit: 20,
+        });
         if (!isCancelled) {
           setNearbyCount(response.drivers.length);
           setNearbyDrivers(
@@ -123,31 +149,64 @@ export default function RequestRideScreenWeb() {
       isCancelled = true;
       clearInterval(timer);
     };
-  }, [pickupLat, pickupLng]);
+  }, [pickupLocation]);
+
+  const handlePickupSelect = (place: PlaceDetails) => {
+    setPickupLocation({
+      lat: place.geometry.location.lat,
+      lng: place.geometry.location.lng,
+    });
+    setPickupAddress(place.formatted_address);
+  };
+
+  const handleDropoffSelect = (place: PlaceDetails) => {
+    setDropoffLocation({
+      lat: place.geometry.location.lat,
+      lng: place.geometry.location.lng,
+    });
+    setDropoffAddress(place.formatted_address);
+  };
+
+  const handlePickupInputChange = (text: string) => {
+    setPickupAddress(text);
+    setPickupLocation(null);
+  };
+
+  const handleDropoffInputChange = (text: string) => {
+    setDropoffAddress(text);
+    setDropoffLocation(null);
+  };
+
+  const handlePickupMapSelect = async (location: LatLng) => {
+    setPickupLocation(location);
+    setPickupAddress(await resolveAddress(location));
+  };
+
+  const handleDropoffMapSelect = async (location: LatLng) => {
+    setDropoffLocation(location);
+    setDropoffAddress(await resolveAddress(location));
+  };
 
   const handleRequestRide = async () => {
-    const pLat = parseFloat(pickupLat);
-    const pLng = parseFloat(pickupLng);
-    const dLat = parseFloat(dropoffLat);
-    const dLng = parseFloat(dropoffLng);
-
-    if (!currentUser || !Number.isFinite(pLat) || !Number.isFinite(pLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
-      Alert.alert("Validation", "Please provide valid pickup and destination coordinates.");
+    if (!currentUser || !pickupLocation || !dropoffLocation) {
+      Alert.alert("Validation", "Select both pickup and destination using search or map.");
       return;
     }
 
     try {
       setIsRequesting(true);
-      const distanceMeters = Math.max(0, Math.round(distance * 1000));
+      const distanceMeters = Math.max(0, Math.round(distanceKm * 1000));
       const durationSeconds = Math.max(0, Math.round(etaSeconds));
       const idempotencyKey = `trip_${Date.now()}_${currentUser.id}`;
+      const finalPickupAddress = pickupAddress.trim() || (await resolveAddress(pickupLocation));
+      const finalDropoffAddress = dropoffAddress.trim() || (await resolveAddress(dropoffLocation));
 
       try {
         const trip = await createTrip({
-          pickup: { lat: pLat, lng: pLng },
-          dropoff: { lat: dLat, lng: dLng },
-          pickupAddress: pickupAddress || `${pLat.toFixed(6)}, ${pLng.toFixed(6)}`,
-          dropoffAddress: dropoffAddress || `${dLat.toFixed(6)}, ${dLng.toFixed(6)}`,
+          pickup: pickupLocation,
+          dropoff: dropoffLocation,
+          pickupAddress: finalPickupAddress,
+          dropoffAddress: finalDropoffAddress,
           rideType,
           distanceMeters,
           durationSeconds,
@@ -162,12 +221,12 @@ export default function RequestRideScreenWeb() {
 
       const ride = await createRide(
         currentUser.id.toString(),
-        pLat,
-        pLng,
-        dLat,
-        dLng,
-        pickupAddress || `${pLat.toFixed(6)}, ${pLng.toFixed(6)}`,
-        dropoffAddress || `${dLat.toFixed(6)}, ${dLng.toFixed(6)}`,
+        pickupLocation.lat,
+        pickupLocation.lng,
+        dropoffLocation.lat,
+        dropoffLocation.lng,
+        finalPickupAddress,
+        finalDropoffAddress,
         rideType,
         fare,
         distanceMeters,
@@ -183,20 +242,6 @@ export default function RequestRideScreenWeb() {
       setIsRequesting(false);
     }
   };
-
-  const parsedPickupLat = parseFloat(pickupLat);
-  const parsedPickupLng = parseFloat(pickupLng);
-  const parsedDropoffLat = parseFloat(dropoffLat);
-  const parsedDropoffLng = parseFloat(dropoffLng);
-
-  const pickupLocation =
-    Number.isFinite(parsedPickupLat) && Number.isFinite(parsedPickupLng)
-      ? { lat: parsedPickupLat, lng: parsedPickupLng }
-      : undefined;
-  const dropoffLocation =
-    Number.isFinite(parsedDropoffLat) && Number.isFinite(parsedDropoffLng)
-      ? { lat: parsedDropoffLat, lng: parsedDropoffLng }
-      : undefined;
 
   const etaLabel = useMemo(() => {
     if (!etaSeconds) return "--";
@@ -233,53 +278,54 @@ export default function RequestRideScreenWeb() {
             </View>
             <Text style={{ marginTop: 16, fontSize: 28, fontWeight: "800", color: "#FFFFFF" }}>Request Ride</Text>
             <Text style={{ marginTop: 6, fontSize: 14, color: "#CBD5E1" }}>
-              Set pickup and destination, then confirm your ride.
+              Search addresses or tap the map to set pickup and destination.
             </Text>
           </View>
 
           <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
             <RideMap
               userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
-              pickupLocation={pickupLocation}
-              dropoffLocation={dropoffLocation}
+              pickupLocation={pickupLocation || undefined}
+              dropoffLocation={dropoffLocation || undefined}
+              routePolyline={routePolyline}
               nearbyDrivers={nearbyDrivers}
+              onPickupSelect={(location) => {
+                void handlePickupMapSelect(location);
+              }}
+              onDropoffSelect={(location) => {
+                void handleDropoffMapSelect(location);
+              }}
               style={{ height: 360 }}
             />
           </View>
 
           <AppCard>
             <View style={{ gap: 12 }}>
-              <AppInput
-                label="Pickup"
+              <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Pickup</Text>
+              <PlaceSearchInput
+                placeholder="Search pickup address"
+                onPlaceSelect={handlePickupSelect}
+                userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
                 value={pickupAddress}
-                onChangeText={setPickupAddress}
-                placeholder="Pickup address"
+                onChangeText={handlePickupInputChange}
               />
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <AppInput placeholder="Pickup lat" value={pickupLat} onChangeText={setPickupLat} keyboardType="numeric" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <AppInput placeholder="Pickup lng" value={pickupLng} onChangeText={setPickupLng} keyboardType="numeric" />
-                </View>
-              </View>
+              <Text style={{ fontSize: 12, color: brand.textMuted }}>
+                {pickupAddress ? `Selected: ${pickupAddress}` : "Tap map or search pickup address."}
+              </Text>
 
-              <AppInput
-                label="Destination"
+              <Text style={{ marginTop: 2, fontSize: 14, fontWeight: "700", color: brand.text }}>Destination</Text>
+              <PlaceSearchInput
+                placeholder="Search destination address"
+                onPlaceSelect={handleDropoffSelect}
+                userLocation={pickupLocation || undefined}
                 value={dropoffAddress}
-                onChangeText={setDropoffAddress}
-                placeholder="Dropoff address"
+                onChangeText={handleDropoffInputChange}
               />
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <AppInput placeholder="Dropoff lat" value={dropoffLat} onChangeText={setDropoffLat} keyboardType="numeric" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <AppInput placeholder="Dropoff lng" value={dropoffLng} onChangeText={setDropoffLng} keyboardType="numeric" />
-                </View>
-              </View>
+              <Text style={{ fontSize: 12, color: brand.textMuted }}>
+                {dropoffAddress ? `Selected: ${dropoffAddress}` : "Tap map or search destination address."}
+              </Text>
 
-              <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={{ marginTop: 4, flexDirection: "row", gap: 10 }}>
                 <TouchableOpacity
                   onPress={() => setRideType("standard")}
                   style={{
@@ -331,7 +377,7 @@ export default function RequestRideScreenWeb() {
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={{ fontSize: 12, color: brand.textMuted }}>Distance</Text>
                   <Text style={{ marginTop: 2, fontSize: 16, fontWeight: "700", color: brand.text }}>
-                    {distance > 0 ? `${distance.toFixed(1)} km` : "--"}
+                    {distanceKm > 0 ? `${distanceKm.toFixed(1)} km` : "--"}
                   </Text>
                   <Text style={{ marginTop: 4, fontSize: 12, color: brand.textMuted }}>ETA {etaLabel}</Text>
                 </View>

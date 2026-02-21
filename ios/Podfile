@@ -20,17 +20,14 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
-target 'FreeohnServiceSeeker' do
+target 'FreeohnDriver' do
   use_expo_modules!
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
   else
     config_command = [
-      'node',
-      '--no-warnings',
-      '--eval',
-      'require(\'expo/bin/autolinking\')',
+      'npx',
       'expo-modules-autolinking',
       'react-native-config',
       '--json',

@@ -1,13 +1,36 @@
 import React, { useEffect, useRef } from "react";
 import { View } from "react-native";
-import maplibregl, { Map, Marker } from "maplibre-gl";
+import maplibregl, { Map, Marker, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RideMapProps } from "./RideMap.types";
 import { IS_DRIVER_APP } from "@/constants/app-variant";
 import { driverTheme, riderTheme } from "@/constants/design-system";
 
 const DEFAULT_CENTER = { lat: -15.4162, lng: 28.3115 }; // Lusaka default
-const MAP_STYLE_URL = process.env.EXPO_PUBLIC_MAP_STYLE_URL || "https://demotiles.maplibre.org/style.json";
+const MAP_STYLE_URL = process.env.EXPO_PUBLIC_MAP_STYLE_URL?.trim();
+const FALLBACK_RASTER_STYLE: StyleSpecification = {
+  version: 8,
+  name: "freeohn-raster-light",
+  sources: {
+    carto: {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+    },
+  },
+  layers: [
+    {
+      id: "carto-layer",
+      type: "raster",
+      source: "carto",
+    },
+  ],
+};
 
 const ROUTE_SOURCE_ID = "trip-route-source";
 const ROUTE_LAYER_ID = "trip-route-layer";
@@ -77,6 +100,16 @@ export function RideMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
+  const fallbackAppliedRef = useRef(false);
+  const onPickupSelectRef = useRef(onPickupSelect);
+  const onDropoffSelectRef = useRef(onDropoffSelect);
+  const pickupLocationRef = useRef(pickupLocation);
+
+  useEffect(() => {
+    onPickupSelectRef.current = onPickupSelect;
+    onDropoffSelectRef.current = onDropoffSelect;
+    pickupLocationRef.current = pickupLocation;
+  }, [onDropoffSelect, onPickupSelect, pickupLocation]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -84,19 +117,26 @@ export function RideMap({
     const center = userLocation ?? pickupLocation ?? DEFAULT_CENTER;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_URL,
+      style: MAP_STYLE_URL || FALLBACK_RASTER_STYLE,
       center: [center.lng, center.lat],
       zoom: 13,
       attributionControl: {},
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
+    map.on("error", () => {
+      // If a custom style URL fails to load, immediately fall back to a stable OSM raster style.
+      if (MAP_STYLE_URL && !fallbackAppliedRef.current) {
+        fallbackAppliedRef.current = true;
+        map.setStyle(FALLBACK_RASTER_STYLE);
+      }
+    });
 
     map.on("click", (event) => {
       const location = { lat: event.lngLat.lat, lng: event.lngLat.lng };
-      if (onPickupSelect && !pickupLocation) {
-        onPickupSelect(location);
-      } else if (onDropoffSelect) {
-        onDropoffSelect(location);
+      if (onPickupSelectRef.current && !pickupLocationRef.current) {
+        onPickupSelectRef.current(location);
+      } else if (onDropoffSelectRef.current) {
+        onDropoffSelectRef.current(location);
       }
     });
 
@@ -108,7 +148,7 @@ export function RideMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [onDropoffSelect, onPickupSelect, pickupLocation, userLocation]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
