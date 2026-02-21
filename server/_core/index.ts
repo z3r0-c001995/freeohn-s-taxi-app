@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { createRideHailingRouter } from "../modules/http/ride-hailing.router";
+import { createMapsHttpRouter } from "../modules/http/maps.router";
 import { registerRealtimeGateway } from "../modules/location/socket.gateway";
 
 function parseCorsOrigins(raw: string | undefined): string[] {
@@ -60,7 +61,8 @@ async function startServer() {
 
   // CORS with explicit allow list in production and permissive fallback in development.
   app.use((req, res, next) => {
-    const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+    const origin =
+      typeof req.headers.origin === "string" ? req.headers.origin : undefined;
 
     if (origin) {
       const allowed = isOriginAllowed(origin, corsAllowList);
@@ -73,7 +75,10 @@ async function startServer() {
       res.header("Access-Control-Allow-Origin", origin);
     }
 
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, OPTIONS",
+    );
     res.header(
       "Access-Control-Allow-Headers",
       "Origin, X-Requested-With, Content-Type, Accept, Authorization, Idempotency-Key, X-Dev-User-Id, X-Dev-User-Role",
@@ -101,6 +106,7 @@ async function startServer() {
     res.json({ ok: true, timestamp: Date.now() });
   });
 
+  app.use("/api/maps", createMapsHttpRouter());
   app.use("/api", createRideHailingRouter());
 
   app.use(
