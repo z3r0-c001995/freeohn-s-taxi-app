@@ -8,6 +8,7 @@ import {
   type GeoBounds,
 } from "../dispatch/geo";
 import type {
+  DriverAccountRecord,
   DriverDispatchOffer,
   DriverRatingRecord,
   IdempotencyEntry,
@@ -22,6 +23,8 @@ type LockResolver = () => void;
 
 class InMemoryRidePlatformStore {
   private readonly drivers = new Map<string, DriverProfileRecord>();
+  private readonly driverAccounts = new Map<string, DriverAccountRecord>();
+  private readonly driverAccountByOpenId = new Map<string, string>();
   private readonly driverStatus = new Map<string, DriverStatusRecord>();
   private readonly trips = new Map<string, TripRecord>();
   private readonly tripEvents = new Map<string, TripEventRecord>();
@@ -95,6 +98,45 @@ class InMemoryRidePlatformStore {
       });
     }
     return profile;
+  }
+
+  upsertDriverAccount(account: DriverAccountRecord): DriverAccountRecord {
+    const normalizedOpenId = account.openId.trim();
+    if (!normalizedOpenId) {
+      throw new Error("Driver account openId is required");
+    }
+
+    const openIdOwner = this.driverAccountByOpenId.get(normalizedOpenId);
+    if (openIdOwner && openIdOwner !== account.driverId) {
+      throw new Error("Driver account openId is already assigned to another driver");
+    }
+
+    const previous = this.driverAccounts.get(account.driverId);
+    if (previous?.openId) {
+      this.driverAccountByOpenId.delete(previous.openId);
+    }
+
+    const next: DriverAccountRecord = {
+      ...account,
+      openId: normalizedOpenId,
+    };
+    this.driverAccounts.set(next.driverId, next);
+    this.driverAccountByOpenId.set(next.openId, next.driverId);
+    return next;
+  }
+
+  getDriverAccountByDriverId(driverId: string): DriverAccountRecord | null {
+    return this.driverAccounts.get(driverId) ?? null;
+  }
+
+  getDriverAccountByOpenId(openId: string): DriverAccountRecord | null {
+    const driverId = this.driverAccountByOpenId.get(openId.trim());
+    if (!driverId) return null;
+    return this.driverAccounts.get(driverId) ?? null;
+  }
+
+  listDriverAccounts(): DriverAccountRecord[] {
+    return Array.from(this.driverAccounts.values());
   }
 
   getDriverById(driverId: string): DriverProfileRecord | null {
@@ -359,6 +401,7 @@ class InMemoryRidePlatformStore {
   getSnapshot(): PlatformSnapshot {
     return {
       drivers: this.listDrivers(),
+      driverAccounts: this.listDriverAccounts(),
       driverStatus: this.listDriverStatus(),
       trips: Array.from(this.trips.values()),
       tripEvents: Array.from(this.tripEvents.values()),
@@ -372,6 +415,8 @@ class InMemoryRidePlatformStore {
 
   reset(): void {
     this.drivers.clear();
+    this.driverAccounts.clear();
+    this.driverAccountByOpenId.clear();
     this.driverStatus.clear();
     this.trips.clear();
     this.tripEvents.clear();

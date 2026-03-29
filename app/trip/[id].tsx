@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Linking, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Linking, ScrollView, Text, TouchableOpacity, View, Modal } from "react-native";
+import MapView from "react-native-maps";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -12,18 +13,31 @@ import { AppInput } from "@/components/ui/app-input";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useTripRealtime } from "@/hooks/use-trip-realtime";
+import { useVoiceInstructor } from "@/hooks/use-voice-instructor";
 import { cancelTrip, rateTrip, sendSos, shareTrip } from "@/lib/ride-hailing-api";
+import { trpc } from "@/lib/trpc";
+import { getTripRouteColor } from "@/lib/trip-route-style";
+import { IS_SEEKER_APP } from "@/constants/app-variant";
+import { mapRemoteTripToLocal } from "@/lib/ride-utils";
+import { addFavouriteDriver } from "@/lib/db-service";
+import { useAppStore } from "@/lib/store";
 
 export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const brand = useBrandTheme();
+  const { currentUser, setActiveRide } = useAppStore();
   const { trip, driverLocation, isLoading, transport } = useTripRealtime(id ?? null);
 
   const [rating, setRating] = useState("5");
   const [feedback, setFeedback] = useState("");
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
   const [matchingElapsedSec, setMatchingElapsedSec] = useState(0);
+  const mapRef = useRef<MapView>(null);
+
+  // Voice instructor: speaks navigation cues at each trip state change
+  useVoiceInstructor({ tripState: trip?.state });
 
   const canCancel = useMemo(() => {
     if (!trip?.state) return false;
@@ -31,6 +45,19 @@ export default function TripDetailsScreen() {
   }, [trip?.state]);
 
   const isMatchingState = trip?.state === "CREATED" || trip?.state === "MATCHING";
+  const isCompleted = trip?.state === "COMPLETED";
+
+  useEffect(() => {
+    if (isCompleted && IS_SEEKER_APP) {
+      setShowRatingModal(true);
+    }
+  }, [isCompleted]);
+
+  useEffect(() => {
+    if (trip) {
+      setActiveRide(mapRemoteTripToLocal(trip) as any);
+    }
+  }, [trip, setActiveRide]);
 
   useEffect(() => {
     if (!trip?.createdAt || !isMatchingState) {
@@ -49,6 +76,15 @@ export default function TripDetailsScreen() {
     return () => clearInterval(timer);
   }, [trip?.createdAt, isMatchingState]);
 
+  useEffect(() => {
+    if (trip?.state === "IN_PROGRESS" && driverLocation?.lat && driverLocation?.lng) {
+      mapRef.current?.animateCamera({
+        center: { latitude: driverLocation.lat, longitude: driverLocation.lng },
+        zoom: 17.5,
+      }, { duration: 1200 });
+    }
+  }, [trip?.state, driverLocation?.lat, driverLocation?.lng]);
+
   const matchingCounterLabel = useMemo(() => {
     const minutes = Math.floor(matchingElapsedSec / 60);
     const seconds = matchingElapsedSec % 60;
@@ -65,7 +101,32 @@ export default function TripDetailsScreen() {
   const liveDriverMarker =
     driverLocation && Number.isFinite(driverLocation.lat) && Number.isFinite(driverLocation.lng)
       ? [{ lat: driverLocation.lat, lng: driverLocation.lng, heading: driverLocation.heading }]
-      : [];
+      : trip?.driver?.location &&
+          Number.isFinite(Number(trip.driver.location.lat)) &&
+          Number.isFinite(Number(trip.driver.location.lng))
+        ? [
+            {
+              lat: Number(trip.driver.location.lat),
+              lng: Number(trip.driver.location.lng),
+            },
+          ]
+        : [];
+
+  const { data: routeData } = trpc.maps.computeRoute.useQuery(
+    {
+      origin: pickupLocation!,
+      destination: dropoffLocation!,
+      travelMode: "DRIVE",
+    },
+    {
+      enabled: !!pickupLocation && !!dropoffLocation,
+    },
+  );
+
+  const routeColor = useMemo(
+    () => getTripRouteColor(trip?.state, brand),
+    [brand, trip?.state],
+  );
 
   const handleCancel = async () => {
     if (!id) return;
@@ -116,8 +177,9 @@ export default function TripDetailsScreen() {
     try {
       setIsSubmittingRating(true);
       await rateTrip(id, { score: parsed, feedback: feedback.trim() || undefined });
-      Alert.alert("Thanks", "Your rating was submitted.");
       setFeedback("");
+      setShowRatingModal(false);
+      router.replace("/payment" as never);
     } catch (error) {
       Alert.alert("Error", error instanceof Error ? error.message : "Unable to submit rating");
     } finally {
@@ -125,226 +187,180 @@ export default function TripDetailsScreen() {
     }
   };
 
+  const skipRating = () => {
+    setShowRatingModal(false);
+    router.replace("/payment" as never);
+  };
+
   const stateLabel = trip?.state ?? (isLoading ? "Loading..." : "Unknown");
 
   return (
     <ScreenContainer className="bg-background" containerClassName="bg-background">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View style={{ gap: 16, paddingBottom: 20 }}>
-          <View
-            style={{
-              borderRadius: radii.xl,
-              backgroundColor: "#0A1E49",
-              padding: 18,
-              ...shadows.md,
-            }}
+      <View style={{ flex: 1 }}>
+        {/* Map Section */}
+        <View style={{ flex: 1 }}>
+          <RideMap
+            mapRef={mapRef}
+            userLocation={pickupLocation}
+            pickupLocation={pickupLocation}
+            dropoffLocation={dropoffLocation}
+            routePolyline={routeData?.encodedPolyline}
+            routeColor={routeColor}
+            nearbyDrivers={liveDriverMarker}
+            style={{ flex: 1 }}
+          />
+          <TouchableOpacity 
+            onPress={() => router.back()}
+            style={{ position: 'absolute', top: 50, left: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', ...shadows.md }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <TouchableOpacity
-                onPress={() => router.back()}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 999,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "rgba(255,255,255,0.14)",
-                }}
-              >
-                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-              <AppBadge
-                label={transport === "websocket" ? "Realtime: WebSocket" : transport === "sse" ? "Realtime: SSE" : "Realtime: Polling"}
-                tone="primary"
-              />
-            </View>
-            <Text style={{ marginTop: 14, fontSize: 27, fontWeight: "800", color: "#FFFFFF" }}>Trip Status</Text>
-            <Text style={{ marginTop: 5, color: "#CBD5E1", fontSize: 13 }}>Trip ID: {id ?? "-"}</Text>
-            <Text style={{ marginTop: 3, color: "#CBD5E1", fontSize: 13 }}>State: {stateLabel}</Text>
+            <Ionicons name="arrow-back" size={24} color={brand.text} />
+          </TouchableOpacity>
+
+          {/* Floating Status Badge */}
+          <View style={{ position: 'absolute', top: 50, alignSelf: 'center', backgroundColor: brand.accent, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, ...shadows.md }}>
+             <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>{stateLabel.replace('_', ' ')}</Text>
           </View>
+        </View>
 
-          {isMatchingState ? (
-            <AppCard tone="primary">
-              <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>Looking for nearby drivers...</Text>
-              <Text style={{ marginTop: 5, fontSize: 13, color: brand.textMuted }}>
-                Stay on this screen while we dispatch your request.
-              </Text>
-              <View style={{ marginTop: 18, alignItems: "center", justifyContent: "center" }}>
-                <View
-                  style={{
-                    width: 106,
-                    height: 106,
-                    borderRadius: 999,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: "rgba(249,115,22,0.15)",
-                    borderWidth: 1,
-                    borderColor: "rgba(249,115,22,0.5)",
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 54,
-                      height: 54,
-                      borderRadius: 999,
-                      backgroundColor: brand.primary,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Ionicons name="car-sport" size={24} color="#FFFFFF" />
-                  </View>
-                </View>
-                <Text style={{ marginTop: 14, fontSize: 32, fontWeight: "800", color: brand.text }}>{matchingCounterLabel}</Text>
-                <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>matching timer</Text>
-              </View>
-              <View style={{ marginTop: 14 }}>
-                <AppButton label="Cancel Request" variant="outline" onPress={handleCancel} />
-              </View>
-            </AppCard>
-          ) : null}
-
-          {(pickupLocation || dropoffLocation) ? (
-            <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
-              <RideMap
-                userLocation={pickupLocation}
-                pickupLocation={pickupLocation}
-                dropoffLocation={dropoffLocation}
-                nearbyDrivers={liveDriverMarker}
-                style={{ height: 320 }}
-              />
-              <View style={{ padding: 12, backgroundColor: brand.surface }}>
-                <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                  Driver GPS: {driverLocation ? `${driverLocation.lat.toFixed(5)}, ${driverLocation.lng.toFixed(5)}` : "Waiting for live updates"}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-
-          <AppCard>
-            <Text style={{ fontSize: 14, color: brand.textMuted }}>Pickup</Text>
-            <Text style={{ marginTop: 3, fontSize: 15, color: brand.text }}>{trip?.pickup?.address ?? "-"}</Text>
-            <Text style={{ marginTop: 10, fontSize: 14, color: brand.textMuted }}>Dropoff</Text>
-            <Text style={{ marginTop: 3, fontSize: 15, color: brand.text }}>{trip?.dropoff?.address ?? "-"}</Text>
-
-            <View style={{ marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <View>
-                <Text style={{ fontSize: 12, color: brand.textMuted }}>Total fare</Text>
-                <Text style={{ marginTop: 3, fontSize: 30, fontWeight: "800", color: brand.text }}>
-                  {trip?.fare?.currency ?? "USD"} {trip?.fare?.total?.toFixed ? trip.fare.total.toFixed(2) : "--"}
-                </Text>
-              </View>
-              <AppBadge label={stateLabel} tone="neutral" />
-            </View>
-          </AppCard>
+        {/* Bottom Details Card */}
+        <View style={{ backgroundColor: brand.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, marginTop: -32, padding: 24, ...shadows.lg }}>
+          
+          {/* Top Handle Decor */}
+          <View style={{ width: 40, height: 4, backgroundColor: brand.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
 
           {trip?.driver ? (
-            <AppCard tone="accent">
-              <Text style={{ fontSize: 17, fontWeight: "800", color: brand.text }}>Driver Assigned</Text>
-              <Text style={{ marginTop: 6, fontSize: 14, color: brand.text }}>Name: {trip.driver.name ?? "Driver"}</Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>Rating: {trip.driver.rating ?? "N/A"}</Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Vehicle: {trip.driver.vehicle?.make} {trip.driver.vehicle?.model}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Plate: {trip.driver.vehicle?.plateNumber} • {trip.driver.vehicle?.color}
-              </Text>
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#E2E8F0', marginRight: 16, overflow: 'hidden' }}>
+                    <Ionicons name="person" size={44} color="#64748B" style={{ alignSelf: 'center', marginTop: 10 }} />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 20, fontWeight: '800', color: brand.text }}>{trip.driver.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                      <Ionicons name="star" size={16} color="#F59E0B" />
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: brand.textMuted, marginLeft: 4 }}>{trip.driver.rating || '4.9'}</Text>
+                      <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: brand.border, marginHorizontal: 8 }} />
+                      <Text style={{ fontSize: 14, color: brand.textMuted }}>{trip.driver.vehicle?.plateNumber || 'BXC 1234'}</Text>
+                    </View>
+                  </View>
+                </View>
 
-              <View style={{ marginTop: 12, flexDirection: "row", gap: 10 }}>
-                <AppButton
-                  label="Call"
-                  variant="secondary"
-                  fullWidth={false}
-                  style={{ flex: 1 }}
-                  onPress={() => {
-                    void Linking.openURL("tel:+260000000000");
-                  }}
-                  leftIcon={<Ionicons name="call" size={16} color="#FFFFFF" />}
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity 
+                    onPress={() => Linking.openURL("tel:+260000000000")}
+                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Ionicons name="call" size={20} color={brand.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => router.push("/(tabs)/chat")}
+                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Ionicons name="chatbubble" size={20} color={brand.primary} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+                <View style={{ flex: 1, backgroundColor: brand.surfaceMuted, borderRadius: radii.lg, padding: 12, alignItems: 'center' }}>
+                   <Text style={{ fontSize: 11, color: brand.textMuted, marginBottom: 4 }}>Fare (ZMW)</Text>
+                   <Text style={{ fontSize: 17, fontWeight: '800', color: brand.primary }}>
+                     {trip.fare?.total != null ? Number(trip.fare.total).toFixed(2) : '—'}
+                   </Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: brand.surfaceMuted, borderRadius: radii.lg, padding: 12, alignItems: 'center' }}>
+                   <Text style={{ fontSize: 11, color: brand.textMuted, marginBottom: 4 }}>Distance</Text>
+                   <Text style={{ fontSize: 17, fontWeight: '800', color: brand.text }}>
+                     {trip.fare?.distanceMeters != null ? `${(trip.fare.distanceMeters / 1000).toFixed(1)} km` : '—'}
+                   </Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: brand.surfaceMuted, borderRadius: radii.lg, padding: 12, alignItems: 'center' }}>
+                   <Text style={{ fontSize: 11, color: brand.textMuted, marginBottom: 4 }}>Vehicle</Text>
+                   <Text style={{ fontSize: 13, fontWeight: '700', color: brand.text }} numberOfLines={1}>{trip.driver.vehicle?.model || 'Sedan'}</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+               <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: brand.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                 <Ionicons name="car-sport" size={40} color={brand.primary} />
+               </View>
+               <Text style={{ fontSize: 20, fontWeight: '800', color: brand.text }}>Finding your driver...</Text>
+               <Text style={{ fontSize: 14, color: brand.textMuted, marginTop: 8 }}>{matchingCounterLabel} elapsed</Text>
+            </View>
+          )}
+
+          {canCancel && (
+            <AppButton 
+              label="Cancel Ride" 
+              variant="primary" 
+              onPress={handleCancel}
+              style={{ height: 56, backgroundColor: brand.primary, borderRadius: radii.xl }}
+            />
+          )}
+
+          {trip?.state === "COMPLETED" && (
+            <View style={{ gap: 10 }}>
+              {IS_SEEKER_APP ? (
+                <AppButton 
+                  label="Proceed to Payment" 
+                  variant="primary"
+                  onPress={() => router.replace("/payment" as never)} 
+                  style={{ height: 56, borderRadius: radii.xl }}
                 />
+              ) : null}
+              {IS_SEEKER_APP && trip.driver?.id && currentUser && (
                 <AppButton
-                  label="Message"
+                  label="Add to Favourites"
                   variant="outline"
-                  fullWidth={false}
-                  style={{ flex: 1 }}
-                  onPress={() => router.push("/(tabs)/chat")}
-                  leftIcon={<Ionicons name="chatbubble" size={16} color={brand.accent} />}
+                  onPress={async () => {
+                    await addFavouriteDriver(currentUser.id.toString(), trip.driver!.id.toString());
+                    Alert.alert("Success", "Driver added to your favourites!");
+                  }}
+                  leftIcon={<Ionicons name="heart-outline" size={18} color={brand.accent} />}
                 />
-              </View>
-            </AppCard>
-          ) : null}
-
-          {trip?.startPin ? (
-            <AppCard tone="muted">
-              <Text style={{ fontSize: 13, color: brand.textMuted }}>Share this PIN with driver at pickup</Text>
-              <Text style={{ marginTop: 6, fontSize: 40, fontWeight: "800", color: brand.primary, letterSpacing: 8 }}>
-                {trip.startPin}
-              </Text>
-            </AppCard>
-          ) : null}
-
-          <AppCard tone="muted">
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Safety Center</Text>
-              <TouchableOpacity
-                onPress={handleSOS}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 999,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "#FEE2E2",
-                }}
-              >
-                <Ionicons name="warning" size={18} color={brand.danger} />
-              </TouchableOpacity>
+              )}
             </View>
-            <Text style={{ marginTop: 6, fontSize: 12, color: brand.textMuted }}>
-              Share route with trusted contacts or trigger emergency support.
-            </Text>
-            <View style={{ marginTop: 10 }}>
-              <AppButton label="Share Live Route" variant="outline" onPress={handleShareRoute} />
-            </View>
-          </AppCard>
+          )}
 
-          {canCancel ? <AppButton label="Cancel Trip" variant="danger" onPress={handleCancel} /> : null}
-
-          {trip?.state === "COMPLETED" ? (
-            <AppCard>
-              <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>Rate your driver</Text>
-              <View style={{ marginTop: 12 }}>
-                <AppInput
-                  label="Rating (1-5)"
-                  value={rating}
-                  onChangeText={setRating}
-                  keyboardType="numeric"
-                  maxLength={1}
-                />
-              </View>
-              <View style={{ marginTop: 10 }}>
-                <AppInput
-                  label="Feedback (optional)"
-                  value={feedback}
-                  onChangeText={setFeedback}
-                  placeholder="Share trip feedback"
-                />
-              </View>
-
-              <View style={{ marginTop: 14 }}>
-                <AppButton
-                  label={isSubmittingRating ? "Submitting..." : "Submit Rating"}
-                  loading={isSubmittingRating}
-                  onPress={handleRate}
-                />
-              </View>
-
-              <View style={{ marginTop: 10 }}>
-                <AppButton label="View Payment Summary" variant="outline" onPress={() => router.push("/payment" as never)} />
-              </View>
-            </AppCard>
-          ) : null}
+          <View style={{ height: 20 }} />
         </View>
-      </ScrollView>
+      </View>
+
+      {/* RATING MODAL OVERLAY */}
+      <Modal visible={showRatingModal} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: brand.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 40, ...shadows.lg }}>
+            <Text style={{ fontSize: 24, fontWeight: "800", color: brand.text, marginBottom: 8, textAlign: "center" }}>Rate you trip</Text>
+            <Text style={{ fontSize: 16, color: brand.textMuted, textAlign: "center", marginBottom: 24 }}>How was your ride with {trip?.driver?.name || "your driver"}?</Text>
+
+            <View style={{ flexDirection: "row", justifyContent: "center", gap: 12, marginBottom: 24 }}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setRating(String(star))}>
+                  <Ionicons name={Number(rating) >= star ? "star" : "star-outline"} size={40} color="#F59E0B" />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <AppInput
+              label="Leave feedback (optional)"
+              placeholder="Was the car clean? Was the driving smooth?"
+              value={feedback}
+              onChangeText={setFeedback}
+              multiline
+              numberOfLines={3}
+              style={{ minHeight: 80, marginBottom: 24 }}
+            />
+
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <AppButton variant="outline" label="Skip" onPress={skipRating} style={{ flex: 1 }} fullWidth={false} />
+              <AppButton label="Submit" onPress={handleRate} loading={isSubmittingRating} style={{ flex: 1 }} fullWidth={false} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </ScreenContainer>
   );
 }

@@ -162,3 +162,40 @@ export function generateOTP(): string {
 export function verifyOTP(enteredOTP: string, sentOTP: string): boolean {
   return enteredOTP === sentOTP;
 }
+
+/**
+ * Maps a remote TripRecord representation to the unified local `Ride` schema shape
+ * expected by the store and payment components.
+ */
+export function mapRemoteTripToLocal(remoteTrip: any) {
+  return {
+    id: remoteTrip.id,
+    riderId: remoteTrip.riderId,
+    driverId: remoteTrip.driverId ?? null,
+    pickupLat: String(remoteTrip.pickup?.lat ?? ""),
+    pickupLng: String(remoteTrip.pickup?.lng ?? ""),
+    dropoffLat: String(remoteTrip.dropoff?.lat ?? ""),
+    dropoffLng: String(remoteTrip.dropoff?.lng ?? ""),
+    pickupAddress: remoteTrip.pickup?.address ?? null,
+    dropoffAddress: remoteTrip.dropoff?.address ?? null,
+    rideType: remoteTrip.fare?.rideType ?? "standard",
+    status:
+      remoteTrip.state === "IN_PROGRESS"
+        ? "in_progress"
+        : remoteTrip.state === "COMPLETED"
+          ? "completed"
+          : remoteTrip.state === "CANCELLED_BY_DRIVER" || remoteTrip.state === "CANCELLED_BY_PASSENGER"
+            ? "cancelled"
+            : "accepted",
+    fareAmount: Number(remoteTrip.fare?.total ?? 0),
+    distanceMeters: Number(remoteTrip.fare?.distanceMeters ?? 0),
+    durationSeconds: Number(remoteTrip.fare?.durationSeconds ?? 0),
+    encodedPolyline: null,
+    requestedAt: new Date(remoteTrip.createdAt ?? Date.now()),
+    acceptedAt: remoteTrip.matchedAt ? new Date(remoteTrip.matchedAt) : null,
+    startedAt: remoteTrip.startedAt ? new Date(remoteTrip.startedAt) : null,
+    completedAt: remoteTrip.completedAt ? new Date(remoteTrip.completedAt) : null,
+    cancelledAt: remoteTrip.cancelledAt ? new Date(remoteTrip.cancelledAt) : null,
+    queuedSync: false,
+  };
+}

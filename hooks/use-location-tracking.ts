@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
-import { Platform } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
 import * as Location from "expo-location";
 import { useAppStore } from "@/lib/store";
 import { updateDriverLocation, insertLocationHistory } from "@/lib/db-service";
@@ -16,6 +16,7 @@ export function useLocationTracking() {
     setCurrentLocation
   } = useAppStore();
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const webPollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastUpdateTime = useRef<number>(0);
   const lastLocation = useRef<{ lat: number; lng: number } | null>(null);
 
@@ -86,9 +87,71 @@ export function useLocationTracking() {
     return elapsedMs >= config.timeInterval;
   }, [getTrackingConfig]);
 
+  const processLocationUpdate = useCallback(
+    async (
+      latitude: number,
+      longitude: number,
+      heading: number | null | undefined,
+      speed: number | null | undefined,
+      mode: TrackingMode,
+    ) => {
+      if (!currentUser) return;
+      const newLocation = { lat: latitude, lng: longitude };
+
+      if (!shouldUpdateLocation(newLocation, mode)) {
+        return;
+      }
+
+      setCurrentLocation({ latitude, longitude });
+      lastLocation.current = newLocation;
+      lastUpdateTime.current = Date.now();
+
+      if (currentUser.role === "driver") {
+        try {
+          const tripId = activeRide?.id ? String(activeRide.id) : undefined;
+          try {
+            await updateRemoteDriverLocation({
+              lat: latitude,
+              lng: longitude,
+              heading: heading ?? undefined,
+              speed: speed ?? undefined,
+              tripId,
+            });
+          } catch {
+            await updateDriverLocation(currentUser.id.toString(), latitude, longitude);
+          }
+
+          await insertLocationHistory(
+            currentUser.id.toString(),
+            latitude,
+            longitude,
+            heading || 0,
+            speed || 0,
+          );
+        } catch (error) {
+          console.error("Failed to update driver location:", error);
+        }
+      }
+    },
+    [activeRide, currentUser, setCurrentLocation, shouldUpdateLocation],
+  );
+
   const stopLocationTracking = useCallback(() => {
+    if (webPollingTimer.current) {
+      clearInterval(webPollingTimer.current);
+      webPollingTimer.current = null;
+    }
+
     if (locationSubscription.current) {
-      locationSubscription.current.remove();
+      try {
+        if (typeof locationSubscription.current.remove === "function") {
+          locationSubscription.current.remove();
+        }
+      } catch (error) {
+        // Web runtime occasionally returns a stale emitter-backed subscription.
+        // Continue cleanup instead of crashing the screen.
+        console.warn("Location subscription cleanup failed:", error);
+      }
       locationSubscription.current = null;
     }
     setIsLocationTracking(false);
@@ -102,20 +165,60 @@ export function useLocationTracking() {
       const config = getTrackingConfig(mode);
 
       // Request permissions based on mode
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         console.error("Foreground location permission denied");
+        if (!canAskAgain) {
+          Alert.alert(
+            "Location Required",
+            "Please enable location permissions in settings to track your ride.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() }
+            ]
+          );
+        }
         return;
       }
 
       if (config.enableBackground && Platform.OS !== "web") {
-        const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-        if (backgroundStatus !== "granted") {
+        const { status: bgStatus, canAskAgain: bgCanAskAgain } = await Location.requestBackgroundPermissionsAsync();
+        if (bgStatus !== "granted") {
           console.warn("Background location permission denied, using foreground only");
+          if (!bgCanAskAgain) {
+            Alert.alert(
+              "Background Location Recommended",
+              "For best results as a driver, please select 'Allow all the time' in settings.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => Linking.openSettings() }
+              ]
+            );
+          }
         }
       }
 
       setIsLocationTracking(true);
+
+      if (Platform.OS === "web") {
+        const poll = async () => {
+          try {
+            const location = await Location.getCurrentPositionAsync({
+              accuracy: config.accuracy,
+            });
+            const { latitude, longitude, heading, speed } = location.coords;
+            await processLocationUpdate(latitude, longitude, heading, speed, mode);
+          } catch (error) {
+            console.error("Failed to poll web location:", error);
+          }
+        };
+
+        await poll();
+        webPollingTimer.current = setInterval(() => {
+          void poll();
+        }, config.timeInterval);
+        return;
+      }
 
       // Start watching position
       locationSubscription.current = await Location.watchPositionAsync(
@@ -126,49 +229,14 @@ export function useLocationTracking() {
         },
         async (location) => {
           const { latitude, longitude, heading, speed } = location.coords;
-          const newLocation = { lat: latitude, lng: longitude };
-
-          // Throttle updates
-          if (!shouldUpdateLocation(newLocation, mode)) {
-            return;
-          }
-
-          // Update store
-          setCurrentLocation({ latitude, longitude });
-
-          // Update last position
-          lastLocation.current = newLocation;
-          lastUpdateTime.current = Date.now();
-
-          // Update database for drivers
-          if (currentUser.role === "driver") {
-            try {
-              const tripId = activeRide?.id ? String(activeRide.id) : undefined;
-              try {
-                await updateRemoteDriverLocation({
-                  lat: latitude,
-                  lng: longitude,
-                  heading: heading ?? undefined,
-                  speed: speed ?? undefined,
-                  tripId,
-                });
-              } catch {
-                await updateDriverLocation(currentUser.id.toString(), latitude, longitude);
-              }
-
-              // Insert location history
-              await insertLocationHistory(currentUser.id.toString(), latitude, longitude, heading || 0, speed || 0);
-            } catch (error) {
-              console.error("Failed to update driver location:", error);
-            }
-          }
+          await processLocationUpdate(latitude, longitude, heading, speed, mode);
         }
       );
     } catch (error) {
       console.error("Failed to start location tracking:", error);
       setIsLocationTracking(false);
     }
-  }, [activeRide, currentUser, getTrackingMode, getTrackingConfig, setCurrentLocation, setIsLocationTracking, shouldUpdateLocation]);
+  }, [currentUser, getTrackingMode, getTrackingConfig, processLocationUpdate, setIsLocationTracking]);
 
   // Auto-manage tracking based on mode
   useEffect(() => {

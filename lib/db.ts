@@ -48,8 +48,11 @@ async function createTables() {
       phone TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       email TEXT,
+      first_name TEXT,
+      last_name TEXT,
       role TEXT NOT NULL CHECK(role IN ('rider', 'driver')),
       avatar TEXT,
+      avatar_url TEXT,
       rating REAL DEFAULT 5.0,
       total_rides INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -139,7 +142,6 @@ async function createTables() {
       FOREIGN KEY(ride_id) REFERENCES rides(id) ON DELETE CASCADE
     );
 
-    -- Location history
     CREATE TABLE IF NOT EXISTS location_history (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -148,6 +150,66 @@ async function createTables() {
       accuracy REAL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    -- Saved locations (home/work shortcuts)
+    CREATE TABLE IF NOT EXISTS saved_locations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      label TEXT NOT NULL CHECK(label IN ('home','work','other')),
+      name TEXT NOT NULL,
+      address TEXT NOT NULL,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, label),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    -- Promotions (admin-managed)
+    CREATE TABLE IF NOT EXISTS promotions (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      discount_percent REAL NOT NULL DEFAULT 0,
+      promo_code TEXT UNIQUE,
+      valid_from DATETIME,
+      valid_to DATETIME,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Favourite drivers
+    CREATE TABLE IF NOT EXISTS favourite_drivers (
+      id TEXT PRIMARY KEY,
+      rider_id TEXT NOT NULL,
+      driver_id TEXT NOT NULL,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(rider_id, driver_id),
+      FOREIGN KEY(rider_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(driver_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    -- Shared ride slots
+    CREATE TABLE IF NOT EXISTS shared_ride_slots (
+      id TEXT PRIMARY KEY,
+      ride_id TEXT NOT NULL,
+      max_seats INTEGER NOT NULL DEFAULT 3,
+      filled_seats INTEGER NOT NULL DEFAULT 1,
+      price_per_seat REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(ride_id) REFERENCES rides(id) ON DELETE CASCADE
+    );
+
+    -- Invites / referrals
+    CREATE TABLE IF NOT EXISTS invites (
+      id TEXT PRIMARY KEY,
+      inviter_id TEXT NOT NULL,
+      invitee_phone TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','expired')),
+      discount_percent REAL DEFAULT 10,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(inviter_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     -- Create indexes for better query performance
@@ -171,6 +233,10 @@ async function runMigrations() {
     "DATETIME DEFAULT CURRENT_TIMESTAMP",
   );
 
+  await ensureColumn("users", "first_name", "TEXT");
+  await ensureColumn("users", "last_name", "TEXT");
+  await ensureColumn("users", "avatar_url", "TEXT");
+
   await db.runAsync(
     `UPDATE driver_profiles
      SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
@@ -179,8 +245,8 @@ async function runMigrations() {
 }
 
 async function ensureColumn(
-  tableName: "driver_profiles",
-  columnName: "updated_at",
+  tableName: string,
+  columnName: string,
   columnDefinition: string,
 ) {
   if (!db) throw new Error("Database not initialized");
@@ -227,7 +293,7 @@ async function seedDriverAppDemoData() {
      (id, user_id, vehicle_type, vehicle_number, vehicle_color, license_number, is_online,
       current_latitude, current_longitude, total_earnings, total_trips, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-    [demoDriverProfileId, demoDriverUserId, "Toyota Prius", "KAA111A", "Silver", "DRV-1001", -1.286389, 36.817223, 0, 156],
+    [demoDriverProfileId, demoDriverUserId, "Toyota Fielder", "ABZ 1234 LP", "White", "DRV-2001", -11.197, 28.891, 0, 0],
   );
 
   console.log("Seeded demo company-registered driver account for driver app");

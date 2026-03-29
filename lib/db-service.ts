@@ -16,16 +16,17 @@ export async function createUser(
 ) {
   const db = await getDb();
   const userId = Date.now(); // Use timestamp as number ID
+  const normalizedPhone = openId.replace(/\D/g, ""); // Ensure consistent storage format
 
   await db.runAsync(
     `INSERT OR REPLACE INTO users (id, phone, name, email, role, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-    [userId.toString(), openId, name, email || null, role]
+    [userId.toString(), normalizedPhone, name, email || null, role]
   );
 
   return {
     id: userId,
-    openId,
+    openId: normalizedPhone,
     name,
     email: email || null,
     loginMethod: loginMethod || null,
@@ -38,9 +39,10 @@ export async function createUser(
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
+  const normalizedPhone = openId.replace(/\D/g, "");
   const result = await db.getFirstAsync(
     `SELECT * FROM users WHERE phone = ?`,
-    [openId]
+    [normalizedPhone]
   );
   if (!result) return null;
 
@@ -48,7 +50,10 @@ export async function getUserByOpenId(openId: string) {
     id: parseInt((result as any).id),
     openId: (result as any).phone,
     name: (result as any).name,
+    firstName: (result as any).first_name || null,
+    lastName: (result as any).last_name || null,
     email: (result as any).email,
+    avatarUrl: (result as any).avatar_url || (result as any).avatar || null,
     loginMethod: null,
     role: (result as any).role,
     createdAt: new Date((result as any).created_at),
@@ -69,13 +74,36 @@ export async function getUserById(id: string) {
     id: parseInt((result as any).id),
     openId: (result as any).phone,
     name: (result as any).name,
+    firstName: (result as any).first_name || null,
+    lastName: (result as any).last_name || null,
     email: (result as any).email,
+    avatarUrl: (result as any).avatar_url || (result as any).avatar || null,
     loginMethod: null,
     role: (result as any).role,
     createdAt: new Date((result as any).created_at),
     updatedAt: new Date((result as any).updated_at),
     lastSignedIn: new Date((result as any).updated_at),
   };
+}
+
+export async function updateUser(userId: string, fields: { firstName?: string; lastName?: string; email?: string; phone?: string; avatarUrl?: string }) {
+  const db = await getDb();
+  const setClauses: string[] = [];
+  const params: any[] = [];
+
+  if (fields.firstName !== undefined) { setClauses.push("first_name = ?"); params.push(fields.firstName); }
+  if (fields.lastName !== undefined) { setClauses.push("last_name = ?"); params.push(fields.lastName); }
+  if (fields.email !== undefined) { setClauses.push("email = ?"); params.push(fields.email); }
+  if (fields.phone !== undefined) { setClauses.push("phone = ?"); params.push(fields.phone.replace(/\D/g, "")); }
+  if (fields.avatarUrl !== undefined) { setClauses.push("avatar_url = ?"); params.push(fields.avatarUrl); }
+
+  if (setClauses.length === 0) return;
+
+  setClauses.push("updated_at = CURRENT_TIMESTAMP");
+  params.push(userId);
+
+  await db.runAsync(`UPDATE users SET ${setClauses.join(", ")} WHERE id = ?`, params);
+  return getUserById(userId);
 }
 
 // ============ DRIVER PROFILE OPERATIONS ============
@@ -196,6 +224,16 @@ export async function getOnlineDrivers() {
     },
     distance: 0, // Will be calculated later
   }));
+}
+
+// ============ FAVOURITES ============
+
+export async function addFavouriteDriver(riderId: string, driverId: string) {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT OR IGNORE INTO favourite_drivers (id, rider_id, driver_id) VALUES (?, ?, ?)`,
+    [Date.now().toString(), riderId, driverId]
+  );
 }
 
 // ============ RIDE OPERATIONS ============

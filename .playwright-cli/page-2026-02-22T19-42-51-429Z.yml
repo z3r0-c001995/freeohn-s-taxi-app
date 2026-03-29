@@ -1,0 +1,48 @@
+- generic [ref=e128]:
+  - generic [ref=e129]:
+    - generic [ref=e130]:
+      - generic [ref=e132] [cursor=pointer]: 
+      - generic [ref=e134]: OFFLINE
+    - generic [ref=e135]: Driver Dashboard
+    - generic [ref=e136]: Freeohn Driver
+    - generic [ref=e137]:
+      - generic [ref=e138]:
+        - generic [ref=e139]: Today
+        - generic [ref=e140]: $0.00
+      - generic [ref=e141]:
+        - generic [ref=e142]: Requests
+        - generic [ref=e143]: "0"
+    - generic [ref=e145] [cursor=pointer]:
+      - generic [ref=e146]: 
+      - generic [ref=e147]: Go Online
+  - generic [ref=e148]:
+    - generic [ref=e150]:
+      - region "Map" [ref=e151]
+      - generic:
+        - generic [ref=e152]:
+          - button "Zoom in" [ref=e153] [cursor=pointer]
+          - button "Zoom out" [ref=e155] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e157]
+        - group [ref=e159]:
+          - generic [ref=e160]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e161]:
+      - generic [ref=e162]: "Location: -15.416200, 28.311500"
+      - generic [ref=e163]: "Tracking: inactive"
+      - generic [ref=e164]: Sun, Feb 22, 2026 • 09:42 PM
+  - generic [ref=e165]:
+    - generic [ref=e166]: Driver Profile & Important Info
+    - generic [ref=e167]: "Name: Demo Driver 1"
+    - generic [ref=e168]: "Phone: +260971000001 • NRC: 111111/11/1"
+    - generic [ref=e169]: "Address: Kabulonga, Lusaka"
+    - generic [ref=e170]: "Vehicle: Toyota Prius • KAA111A • Silver"
+    - generic [ref=e171]: "License: DL-2001001 • Registration: VR-2001001"
+    - generic [ref=e172]: "Compliance: license yes, registration yes, insurance yes, road tax yes, fitness yes"
+    - generic [ref=e173]: "Documents: dl_2001001.pdf, reg_2001001.pdf, insurance_2001001.pdf, road_tax_2001001.pdf, fitness_2001001.pdf"
+    - generic [ref=e174]: "Credits: purchased 500, completed 156, remaining 344"
+    - generic [ref=e175]: "Verified: yes • Last verification: 2/22/2026, 8:21:03 PM"
+    - generic [ref=e176]: "Profile audit: updated 2/22/2026, 8:21:03 PM"
+  - generic [ref=e178]: No pending ride requests.
+  - generic [ref=e179]:
+    - generic [ref=e180]: Earnings & Operations
+    - generic [ref=e181]: View daily totals, weekly trend, and trip-by-trip earnings breakdown.
+    - generic [ref=e184] [cursor=pointer]: Open Earnings

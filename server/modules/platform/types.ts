@@ -8,6 +8,16 @@ import type {
 
 export type DriverOfferStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "EXPIRED";
 
+export type DriverAccountRecord = {
+  driverId: string;
+  userId: number;
+  openId: string;
+  passwordHash: string;
+  isActive: boolean;
+  passwordUpdatedAt: string;
+  lastLoginAt: string | null;
+};
+
 export type DriverDispatchOffer = {
   id: string;
   tripId: string;
@@ -79,6 +89,7 @@ export type IdempotencyEntry = {
 
 export type PlatformSnapshot = {
   drivers: DriverProfileRecord[];
+  driverAccounts: DriverAccountRecord[];
   driverStatus: DriverStatusRecord[];
   trips: TripRecord[];
   tripEvents: TripEventRecord[];
@@ -88,4 +99,3 @@ export type PlatformSnapshot = {
   safetyIncidents: SafetyIncidentRecord[];
   ratings: DriverRatingRecord[];
 };
-

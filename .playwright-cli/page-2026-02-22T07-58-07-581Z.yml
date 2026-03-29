@@ -1,0 +1,48 @@
+- generic [ref=e98]:
+  - generic [ref=e99]:
+    - generic [ref=e100]:
+      - generic [ref=e102] [cursor=pointer]: 
+      - generic [ref=e104]: "Realtime: WebSocket"
+    - generic [ref=e105]: Trip Status
+    - generic [ref=e106]: "Trip ID: trip_55eb18f6a3c249e69ac7272981f9797b"
+    - generic [ref=e107]: "State: MATCHING"
+  - generic [ref=e108]:
+    - generic [ref=e109]: Looking for nearby drivers...
+    - generic [ref=e110]: Stay on this screen while we dispatch your request.
+    - generic [ref=e111]:
+      - generic [ref=e114]: 
+      - generic [ref=e115]: 00:58
+      - generic [ref=e116]: matching timer
+    - generic [ref=e119] [cursor=pointer]: Cancel Request
+  - generic [ref=e120]:
+    - generic [ref=e122]:
+      - generic:
+        - region "Map" [ref=e123]
+        - button "Map marker" [ref=e124] [cursor=pointer]
+        - button "Map marker" [ref=e125] [cursor=pointer]
+        - button "Map marker" [ref=e126] [cursor=pointer]
+      - generic:
+        - generic [ref=e127]:
+          - button "Zoom in" [ref=e128] [cursor=pointer]
+          - button "Zoom out" [ref=e130] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e132]
+        - group [ref=e134]:
+          - generic [ref=e135]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e137]: "Driver GPS: Waiting for live updates"
+  - generic [ref=e138]:
+    - generic [ref=e139]: Pickup
+    - generic [ref=e140]: High Commission of the Republic of Tanzania, 1, Pandit Nehru Road, Longacres, Lusaka, Lusaka District, Lusaka Province, Zambia
+    - generic [ref=e141]: Dropoff
+    - generic [ref=e142]: East Park Mall, Kalundu, Lusaka, Lusaka District, Lusaka Province, Zambia
+    - generic [ref=e143]:
+      - generic [ref=e144]:
+        - generic [ref=e145]: Total fare
+        - generic [ref=e146]: USD 7.92
+      - generic [ref=e148]: MATCHING
+  - generic [ref=e149]:
+    - generic [ref=e150]:
+      - generic [ref=e151]: Safety Center
+      - generic [ref=e153] [cursor=pointer]: 
+    - generic [ref=e154]: Share route with trusted contacts or trigger emergency support.
+    - generic [ref=e157] [cursor=pointer]: Share Live Route
+  - generic [ref=e159] [cursor=pointer]: Cancel Trip

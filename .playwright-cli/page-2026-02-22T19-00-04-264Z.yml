@@ -1,0 +1,13 @@
+- generic [ref=e126]:
+  - generic [ref=e128] [cursor=pointer]: 
+  - generic [ref=e129]:
+    - generic [ref=e130]: Create Profile
+    - generic [ref=e131]: Complete setup to start booking rides.
+  - generic [ref=e132]:
+    - generic [ref=e133]:
+      - generic [ref=e134]: Full Name
+      - textbox "John Doe" [ref=e135]
+    - generic [ref=e137]:
+      - generic [ref=e138]: Email (Optional)
+      - textbox "john@example.com" [ref=e139]
+    - generic [ref=e142] [cursor=pointer]: Complete Setup

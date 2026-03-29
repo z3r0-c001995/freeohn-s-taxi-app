@@ -1,0 +1,62 @@
+- generic [ref=e59]:
+  - generic [ref=e69]:
+    - generic [ref=e70]:
+      - generic [ref=e71]:
+        - generic [ref=e72]:
+          - generic [ref=e73]: Welcome back
+          - generic [ref=e74]: Joshua Grant Kana
+          - generic [ref=e78]: Freeohn's Ride App
+        - generic [ref=e80] [cursor=pointer]: 
+      - generic [ref=e81]:
+        - generic [ref=e82]:
+          - generic [ref=e83]: 
+          - generic [ref=e84]: Sun, Feb 22, 2026 • 09:14 AM
+        - generic [ref=e85]:
+          - generic [ref=e86]: 
+          - generic [ref=e87]: GPS idle
+      - generic [ref=e88]:
+        - generic [ref=e89]:
+          - generic [ref=e90]: Nearby drivers
+          - generic [ref=e91]: "0"
+        - generic [ref=e92]:
+          - generic [ref=e93]: Tracking status
+          - generic [ref=e94]: Idle
+    - generic [ref=e97]:
+      - region "Map" [ref=e98]
+      - generic:
+        - generic [ref=e99]:
+          - button "Zoom in" [ref=e100] [cursor=pointer]
+          - button "Zoom out" [ref=e102] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e104]
+        - group [ref=e106]:
+          - generic [ref=e107]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e108]:
+      - generic [ref=e109]: Book a Ride
+      - generic [ref=e110]: "Pickup: Enable location to use precise pickup."
+      - generic [ref=e111]: "Live tracking: Idle"
+      - generic [ref=e113] [cursor=pointer]:
+        - generic [ref=e114]: 
+        - generic [ref=e115]: Request Ride
+      - generic [ref=e116]:
+        - generic [ref=e118] [cursor=pointer]: Safety
+        - generic [ref=e120] [cursor=pointer]: History
+    - generic [ref=e121]:
+      - generic [ref=e122]: Ride Stats
+      - generic [ref=e123]:
+        - generic [ref=e124]:
+          - generic [ref=e125]: Completed today
+          - generic [ref=e126]: "0"
+        - generic [ref=e127]:
+          - generic [ref=e128]: Payment
+          - generic [ref=e129]: Cash
+  - tablist [ref=e131]:
+    - tab "  Home" [selected] [ref=e133] [cursor=pointer]:
+      - generic [ref=e134]:
+        - generic [ref=e136]: 
+        - generic [ref=e138]: 
+      - generic [ref=e139]: Home
+    - tab "  Settings" [ref=e141] [cursor=pointer]:
+      - generic [ref=e142]:
+        - generic [ref=e144]: 
+        - generic [ref=e146]: 
+      - generic [ref=e147]: Settings

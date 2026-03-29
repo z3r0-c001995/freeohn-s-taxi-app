@@ -40,7 +40,7 @@ describe("Booking flow integration", () => {
       plateNumber: "KDD456B",
       verified: true,
     });
-    tripService.verifyDriver(profile.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, profile.driverId, true);
     tripService.setDriverStatus(driverUser, {
       isOnline: true,
       lat: -1.2867,

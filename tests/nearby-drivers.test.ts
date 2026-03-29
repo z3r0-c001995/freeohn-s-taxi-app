@@ -35,9 +35,9 @@ describe("Nearby drivers query", () => {
       plateNumber: "NBY003",
       verified: false,
     });
-    tripService.verifyDriver(one.driverId, true);
-    tripService.verifyDriver(two.driverId, true);
-    tripService.verifyDriver(three.driverId, false);
+    tripService.verifyDriver({ id: 1, role: "admin" }, one.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, two.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, three.driverId, false);
 
     tripService.setDriverStatus(driverOne, { isOnline: true, lat: -15.4162, lng: 28.3114 });
     tripService.setDriverStatus(driverTwo, { isOnline: true, lat: -15.4262, lng: 28.3314 });

@@ -1,0 +1,24 @@
+- generic [ref=e76]:
+  - generic [ref=e86]:
+    - generic [ref=e87]:
+      - generic [ref=e88]: Welcome back
+      - generic [ref=e89]: Demo Driver
+      - generic [ref=e90]: Offline
+      - generic [ref=e93] [cursor=pointer]: Go Online
+    - generic [ref=e94]:
+      - generic [ref=e95]: Driver Dispatch
+      - generic [ref=e96]: "Date: Sun, Feb 22, 2026 • 09:38 PM"
+      - generic [ref=e97]: "GPS: Waiting for GPS lock"
+      - generic [ref=e98]: "Tracking: Idle"
+      - generic [ref=e101] [cursor=pointer]: Open Driver Dashboard
+  - tablist [ref=e103]:
+    - tab "  Home" [selected] [ref=e105] [cursor=pointer]:
+      - generic [ref=e106]:
+        - generic [ref=e108]: 
+        - generic [ref=e110]: 
+      - generic [ref=e111]: Home
+    - tab "  Settings" [ref=e113] [cursor=pointer]:
+      - generic [ref=e114]:
+        - generic [ref=e116]: 
+        - generic [ref=e118]: 
+      - generic [ref=e119]: Settings

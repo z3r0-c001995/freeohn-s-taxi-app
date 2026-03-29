@@ -1,0 +1,13 @@
+- generic [ref=e87]:
+  - generic [ref=e89] [cursor=pointer]: 
+  - generic [ref=e90]:
+    - generic [ref=e91]: Verify Driver Login
+    - generic [ref=e92]: Enter the OTP sent to 555 123 4567
+  - generic [ref=e93]:
+    - generic [ref=e94]:
+      - generic [ref=e95]: Verification Code
+      - textbox "123456" [active] [ref=e96]
+    - generic [ref=e98]: Verify & Continue
+    - generic [ref=e99]:
+      - generic [ref=e100]: Need a new code?
+      - generic [ref=e102] [cursor=pointer]: Resend

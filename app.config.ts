@@ -37,6 +37,7 @@ const packageId = `${bundleId}.${variantSuffix}`;
 const seekerProjectId = process.env.EAS_PROJECT_ID_SEEKER ?? "3f0b926d-bba9-4ea9-81fd-b188040f405a";
 const driverProjectId = process.env.EAS_PROJECT_ID_DRIVER ?? "51241631-cc10-4138-a7ed-c6ae8eefd642";
 const easProjectId = appVariant === "driver" ? driverProjectId : seekerProjectId;
+
 process.env.EXPO_PUBLIC_DEEP_LINK_SCHEME = appScheme;
 
 const env = {
@@ -107,6 +108,15 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    [
+      "expo-location",
+      {
+        locationAlwaysAndWhenInUsePermission: "Allow $(PRODUCT_NAME) to use your location.",
+        locationAlwaysPermission: "Allow $(PRODUCT_NAME) to use your location in the background.",
+        isIosBackgroundLocationEnabled: true,
+        isAndroidBackgroundLocationEnabled: true,
+      },
+    ],
     [
       "expo-audio",
       {

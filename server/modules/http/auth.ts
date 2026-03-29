@@ -2,6 +2,16 @@ import type { NextFunction, Request, Response } from "express";
 import { sdk } from "../../_core/sdk";
 import { userRoleValues, type UserRole } from "../../../shared/ride-hailing";
 
+export type AuthUser = Awaited<ReturnType<typeof sdk.authenticateRequest>>;
+
+declare global {
+  namespace Express {
+    interface Request {
+      authUser?: AuthUser;
+    }
+  }
+}
+
 function parseDevUser(req: Request): Request["authUser"] | null {
   const allowDevAuth =
     process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_AUTH_HEADER === "1";

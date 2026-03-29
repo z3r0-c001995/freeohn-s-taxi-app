@@ -1,0 +1,58 @@
+- generic [ref=e426]:
+  - generic [ref=e427]:
+    - generic [ref=e428]:
+      - generic [ref=e430] [cursor=pointer]: 
+      - generic [ref=e432]: "Nearby drivers: 1"
+    - generic [ref=e433]: Request Ride
+    - generic [ref=e434]: Search addresses or tap the map to set pickup and destination.
+  - generic [ref=e437]:
+    - generic:
+      - region "Map" [ref=e438]
+      - button "Map marker" [ref=e514] [cursor=pointer]
+      - button "Map marker" [ref=e515] [cursor=pointer]
+      - button "Map marker" [ref=e516] [cursor=pointer]
+    - generic:
+      - generic [ref=e439]:
+        - button "Zoom in" [ref=e440] [cursor=pointer]
+        - button "Zoom out" [ref=e442] [cursor=pointer]
+        - button "Drag to rotate map, click to reset north" [ref=e444]
+      - group [ref=e446]:
+        - generic [ref=e447]: © OpenStreetMap contributors © CARTO
+  - generic [ref=e449]:
+    - generic [ref=e450]: Pickup
+    - generic [ref=e451]:
+      - textbox "Search pickup address" [ref=e452]: Levy Junction Shopping Mall, Kabelenga Road, Luneta, Lusaka, Lusaka District, Lusaka Province, Zambia
+      - generic [ref=e483]: Search unavailable. Please try again.
+    - generic [ref=e453]: "Selected: Levy Junction Shopping Mall, Kabelenga Road, Luneta, Lusaka, Lusaka District, Lusaka Province, Zambia"
+    - generic [ref=e454]: Destination
+    - generic [ref=e455]:
+      - textbox "Search destination address" [ref=e456]: East Park Mall, Lusaka, Lusaka, Zambia
+      - generic [ref=e500]:
+        - generic [ref=e502] [cursor=pointer]:
+          - generic [ref=e503]: East Park Mall
+          - generic [ref=e504]: Kalundu, Lusaka, Lusaka District, Lusaka Province, Zambia
+        - generic [ref=e506] [cursor=pointer]:
+          - generic [ref=e507]: East Park Mall
+          - generic [ref=e508]: 12a, Great East Road, Kalundu, Lusaka, Lusaka District, Lusaka Province, Zambia
+        - generic [ref=e510] [cursor=pointer]:
+          - generic [ref=e511]: East Park Mall
+          - generic [ref=e512]: Great East Road, Kalundu, Lusaka, Lusaka District, Lusaka Province, Zambia
+    - generic [ref=e457]: "Selected: East Park Mall, Lusaka, Lusaka, Zambia"
+    - generic [ref=e458]:
+      - generic [ref=e459] [cursor=pointer]:
+        - generic [ref=e460]: Standard
+        - generic [ref=e461]: Affordable everyday ride
+      - generic [ref=e462] [cursor=pointer]:
+        - generic [ref=e463]: Premium
+        - generic [ref=e464]: More comfort and space
+    - generic [ref=e465]:
+      - generic [ref=e466]:
+        - generic [ref=e467]: Estimated fare
+        - generic [ref=e468]: $10.20
+      - generic [ref=e469]:
+        - generic [ref=e470]: Distance
+        - generic [ref=e471]: 4.9 km
+        - generic [ref=e472]: ETA 7 min
+    - generic [ref=e513] [cursor=pointer]:
+      - generic [ref=e473]: 
+      - generic [ref=e474]: Confirm Ride

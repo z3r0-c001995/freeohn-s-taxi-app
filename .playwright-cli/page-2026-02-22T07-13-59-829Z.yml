@@ -1,0 +1,14 @@
+- generic [ref=e34]:
+  - generic [ref=e35]:
+    - generic [ref=e38] [cursor=pointer]: 
+    - generic [ref=e39]: Sign In
+    - generic [ref=e40]: Register or login to book a ride in minutes.
+  - generic [ref=e42]:
+    - generic [ref=e43]: Phone Number
+    - generic [ref=e44]:
+      - generic [ref=e45] [cursor=pointer]:
+        - generic [ref=e46]: "+260"
+        - generic [ref=e47]: 
+      - textbox "97 123 4567" [active] [ref=e51]: "96084"
+    - generic [ref=e54] [cursor=pointer]: Continue
+    - generic [ref=e55]: By continuing you agree to Freeohn's Ride App Terms.

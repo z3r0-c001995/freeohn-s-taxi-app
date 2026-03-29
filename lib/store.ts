@@ -50,7 +50,9 @@ interface AppStore {
   // Auth
   currentUser: User | null;
   isAuthenticated: boolean;
+  isHydrated: boolean;
   setCurrentUser: (user: User | null) => void;
+  updateCurrentUser: (fields: Partial<User>) => void;
   setIsAuthenticated: (authenticated: boolean) => void;
 
   // Driver Profile
@@ -79,6 +81,10 @@ interface AppStore {
   availableDrivers: (DriverProfile & { user: User })[];
   setAvailableDrivers: (drivers: (DriverProfile & { user: User })[]) => void;
 
+  // Saved locations (home/work shortcuts)
+  savedLocations: { home: { address: string; lat: number; lng: number } | null; work: { address: string; lat: number; lng: number } | null };
+  setSavedLocation: (label: 'home' | 'work', loc: { address: string; lat: number; lng: number } | null) => void;
+
   // UI State
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
@@ -94,7 +100,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Auth
   currentUser: null,
   isAuthenticated: false,
+  isHydrated: false,
   setCurrentUser: (user) => set({ currentUser: user }),
+  updateCurrentUser: (fields) => set((state) => ({ 
+    currentUser: state.currentUser ? { ...state.currentUser, ...fields } : null 
+  })),
   setIsAuthenticated: (authenticated) => set({ isAuthenticated: authenticated }),
 
   // Driver Profile
@@ -129,6 +139,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   availableDrivers: [],
   setAvailableDrivers: (drivers) => set({ availableDrivers: drivers }),
 
+  // Saved locations
+  savedLocations: { home: null, work: null },
+  setSavedLocation: (label, loc) =>
+    set((state) => ({
+      savedLocations: { ...state.savedLocations, [label]: loc },
+    })),
+
   // UI State
   isLoading: false,
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -140,15 +157,35 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const userJson = await AsyncStorage.getItem("currentUser");
       const isAuthJson = await AsyncStorage.getItem("isAuthenticated");
+      const activeRideJson = await AsyncStorage.getItem("activeRide");
+      const savedLocJson = await AsyncStorage.getItem("savedLocations");
 
       if (userJson) {
-        set({ currentUser: JSON.parse(userJson) });
+        const user = JSON.parse(userJson);
+        if (user.createdAt) user.createdAt = new Date(user.createdAt);
+        if (user.updatedAt) user.updatedAt = new Date(user.updatedAt);
+        if (user.lastSignedIn) user.lastSignedIn = new Date(user.lastSignedIn);
+        set({ currentUser: user });
       }
       if (isAuthJson) {
         set({ isAuthenticated: JSON.parse(isAuthJson) });
       }
+      if (activeRideJson) {
+        const ride = JSON.parse(activeRideJson);
+        if (ride.requestedAt) ride.requestedAt = new Date(ride.requestedAt);
+        if (ride.acceptedAt) ride.acceptedAt = new Date(ride.acceptedAt);
+        if (ride.startedAt) ride.startedAt = new Date(ride.startedAt);
+        if (ride.completedAt) ride.completedAt = new Date(ride.completedAt);
+        if (ride.cancelledAt) ride.cancelledAt = new Date(ride.cancelledAt);
+        set({ activeRide: ride });
+      }
+      if (savedLocJson) {
+        set({ savedLocations: JSON.parse(savedLocJson) });
+      }
+      set({ isHydrated: true });
     } catch (error) {
       console.error("Failed to hydrate store:", error);
+      set({ isHydrated: true }); // Still mark as finished
     }
   },
 
@@ -157,6 +194,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const state = get();
       await AsyncStorage.setItem("currentUser", JSON.stringify(state.currentUser));
       await AsyncStorage.setItem("isAuthenticated", JSON.stringify(state.isAuthenticated));
+      await AsyncStorage.setItem("activeRide", JSON.stringify(state.activeRide));
+      await AsyncStorage.setItem("savedLocations", JSON.stringify(state.savedLocations));
     } catch (error) {
       console.error("Failed to persist store:", error);
     }

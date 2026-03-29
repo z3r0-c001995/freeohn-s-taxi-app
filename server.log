@@ -1,0 +1,5 @@
+[OAuth] Initialized with baseURL: http://localhost:3000
+{"level":"info","message":"realtime.socket.gateway.ready","timestamp":"2026-03-29T12:02:38.248Z","context":{"transports":["websocket","polling"]}}
+[api] server listening on port 3000
+[Auth] Missing session cookie
+[Auth] Missing session cookie

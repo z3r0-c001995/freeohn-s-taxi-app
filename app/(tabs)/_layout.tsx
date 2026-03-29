@@ -5,9 +5,11 @@ import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Platform } from "react-native";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
+import { useAppStore } from "@/lib/store";
 
 export default function TabLayout() {
   const brand = useBrandTheme();
+  const { activeRide } = useAppStore();
   const insets = useSafeAreaInsets();
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
   const tabBarHeight = 64 + bottomPadding;
@@ -51,7 +53,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chat"
         options={{
-          href: null,
+          title: "Chat",
+          href: activeRide ? "/(tabs)/chat" : null,
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="message.fill" color={color} />,
         }}
       />
     </Tabs>

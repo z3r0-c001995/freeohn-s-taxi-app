@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { createRideHailingRouter } from "../modules/http/ride-hailing.router";
+import { createLencoRouter } from "../modules/payments/lenco.router";
 import { registerRealtimeGateway } from "../modules/location/socket.gateway";
 
 function parseCorsOrigins(raw: string | undefined): string[] {
@@ -112,6 +113,7 @@ async function startServer() {
   // Mount tRPC before the authenticated REST router so public map procedures
   // (autocomplete/reverse geocode) are reachable from web booking screens.
   app.use("/api", createRideHailingRouter());
+  app.use("/api/lenco", createLencoRouter());
 
   registerRealtimeGateway(server, corsAllowList);
 

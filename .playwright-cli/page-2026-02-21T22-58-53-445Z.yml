@@ -1,0 +1,62 @@
+- generic [ref=e146]:
+  - generic [ref=e156]:
+    - generic [ref=e157]:
+      - generic [ref=e158]:
+        - generic [ref=e159]:
+          - generic [ref=e160]: Welcome back
+          - generic [ref=e161]: Test Seeker
+          - generic [ref=e165]: Freeohn's Ride App
+        - generic [ref=e167] [cursor=pointer]: 
+      - generic [ref=e168]:
+        - generic [ref=e169]:
+          - generic [ref=e170]: 
+          - generic [ref=e171]: Sun, Feb 22, 2026 • 12:58 AM
+        - generic [ref=e172]:
+          - generic [ref=e173]: 
+          - generic [ref=e174]: GPS idle
+      - generic [ref=e175]:
+        - generic [ref=e176]:
+          - generic [ref=e177]: Nearby drivers
+          - generic [ref=e178]: "0"
+        - generic [ref=e179]:
+          - generic [ref=e180]: Tracking status
+          - generic [ref=e181]: Idle
+    - generic [ref=e184]:
+      - region "Map" [ref=e185]
+      - generic:
+        - generic [ref=e186]:
+          - button "Zoom in" [ref=e187] [cursor=pointer]
+          - button "Zoom out" [ref=e189] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e191]
+        - group [ref=e193]:
+          - generic [ref=e194]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e195]:
+      - generic [ref=e196]: Book a Ride
+      - generic [ref=e197]: "Pickup: Enable location to use precise pickup."
+      - generic [ref=e198]: "Live tracking: Idle"
+      - generic [ref=e200] [cursor=pointer]:
+        - generic [ref=e201]: 
+        - generic [ref=e202]: Request Ride
+      - generic [ref=e203]:
+        - generic [ref=e205] [cursor=pointer]: Safety
+        - generic [ref=e207] [cursor=pointer]: History
+    - generic [ref=e208]:
+      - generic [ref=e209]: Ride Stats
+      - generic [ref=e210]:
+        - generic [ref=e211]:
+          - generic [ref=e212]: Completed today
+          - generic [ref=e213]: "0"
+        - generic [ref=e214]:
+          - generic [ref=e215]: Payment
+          - generic [ref=e216]: Cash
+  - tablist [ref=e218]:
+    - tab "  Home" [selected] [ref=e220] [cursor=pointer]:
+      - generic [ref=e221]:
+        - generic [ref=e223]: 
+        - generic [ref=e225]: 
+      - generic [ref=e226]: Home
+    - tab "  Settings" [ref=e228] [cursor=pointer]:
+      - generic [ref=e229]:
+        - generic [ref=e231]: 
+        - generic [ref=e233]: 
+      - generic [ref=e234]: Settings

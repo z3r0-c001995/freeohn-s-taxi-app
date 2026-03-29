@@ -1,0 +1,48 @@
+- generic [ref=e525]:
+  - generic [ref=e526]:
+    - generic [ref=e527]:
+      - generic [ref=e529] [cursor=pointer]: 
+      - generic [ref=e531]: "Realtime: WebSocket"
+    - generic [ref=e532]: Trip Status
+    - generic [ref=e533]: "Trip ID: trip_0e11acea6902420dbe9abc18e21dbdc3"
+    - generic [ref=e534]: "State: MATCHING"
+  - generic [ref=e535]:
+    - generic [ref=e536]: Looking for nearby drivers...
+    - generic [ref=e537]: Stay on this screen while we dispatch your request.
+    - generic [ref=e538]:
+      - generic [ref=e541]: 
+      - generic [ref=e542]: 00:01
+      - generic [ref=e543]: matching timer
+    - generic [ref=e546] [cursor=pointer]: Cancel Request
+  - generic [ref=e547]:
+    - generic [ref=e549]:
+      - generic:
+        - region "Map" [ref=e550]
+        - button "Map marker" [ref=e551] [cursor=pointer]
+        - button "Map marker" [ref=e552] [cursor=pointer]
+        - button "Map marker" [ref=e553] [cursor=pointer]
+      - generic:
+        - generic [ref=e554]:
+          - button "Zoom in" [ref=e555] [cursor=pointer]
+          - button "Zoom out" [ref=e557] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e559]
+        - group [ref=e561]:
+          - generic [ref=e562]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e564]: "Driver GPS: Waiting for live updates"
+  - generic [ref=e565]:
+    - generic [ref=e566]: Pickup
+    - generic [ref=e567]: Levy Junction Shopping Mall, Kabelenga Road, Luneta, Lusaka, Lusaka District, Lusaka Province, Zambia
+    - generic [ref=e568]: Dropoff
+    - generic [ref=e569]: East Park Mall, Lusaka, Lusaka, Zambia
+    - generic [ref=e570]:
+      - generic [ref=e571]:
+        - generic [ref=e572]: Total fare
+        - generic [ref=e573]: USD 10.20
+      - generic [ref=e575]: MATCHING
+  - generic [ref=e576]:
+    - generic [ref=e577]:
+      - generic [ref=e578]: Safety Center
+      - generic [ref=e580] [cursor=pointer]: 
+    - generic [ref=e581]: Share route with trusted contacts or trigger emergency support.
+    - generic [ref=e584] [cursor=pointer]: Share Live Route
+  - generic [ref=e586] [cursor=pointer]: Cancel Trip

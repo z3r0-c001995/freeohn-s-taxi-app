@@ -1,0 +1,51 @@
+- generic [ref=e30]:
+  - generic [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e34] [cursor=pointer]: 
+      - generic [ref=e36]: OFFLINE
+    - generic [ref=e37]: Driver Dashboard
+    - generic [ref=e38]: Freeohn Driver
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]: Today
+        - generic [ref=e42]: $0.00
+      - generic [ref=e43]:
+        - generic [ref=e44]: Requests
+        - generic [ref=e45]: "0"
+    - generic [ref=e47] [cursor=pointer]:
+      - generic [ref=e48]: 
+      - generic [ref=e49]: Go Online
+  - generic [ref=e50]:
+    - generic [ref=e52]:
+      - region "Map" [ref=e53]
+      - generic:
+        - generic [ref=e54]:
+          - button "Zoom in" [ref=e55] [cursor=pointer]
+          - button "Zoom out" [ref=e57] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e59]
+        - group [ref=e61]:
+          - generic [ref=e62]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e63]:
+      - generic [ref=e64]: "Location: Lusaka Secondary School, Kumyo Road, Longacres, Lusaka, Lusaka District, Lusaka Province, Zambia"
+      - generic [ref=e65]: "Tracking: inactive"
+      - generic [ref=e66]: Sun, Feb 22, 2026 • 11:08 PM
+  - generic [ref=e67]:
+    - generic [ref=e68]: Driver Profile & Important Info
+    - generic [ref=e69]: "Name: Demo Driver 1"
+    - generic [ref=e70]: "Phone: +260971000001 • NRC: 111111/11/1"
+    - generic [ref=e71]: "Address: Kabulonga, Lusaka"
+    - generic [ref=e72]: "Vehicle: Toyota Prius • KAA111A • Silver"
+    - generic [ref=e73]: "License: DL-2001001 • Registration: VR-2001001"
+    - generic [ref=e74]: "Compliance: license yes, registration yes, insurance yes, road tax yes, fitness yes"
+    - generic [ref=e75]: "Documents: dl_2001001.pdf, reg_2001001.pdf, insurance_2001001.pdf, road_tax_2001001.pdf, fitness_2001001.pdf"
+    - generic [ref=e76]: "Credits: purchased 500, completed 156, remaining 344"
+    - generic [ref=e77]: "Verified: yes • Last verification: 2/22/2026, 8:21:03 PM"
+    - generic [ref=e78]: "Profile audit: updated 2/22/2026, 8:21:03 PM"
+    - generic [ref=e80] [cursor=pointer]:
+      - generic [ref=e81]: 
+      - generic [ref=e82]: Open Full Driver Profile
+  - generic [ref=e84]: No pending ride requests.
+  - generic [ref=e85]:
+    - generic [ref=e86]: Earnings & Operations
+    - generic [ref=e87]: View daily totals, weekly trend, and trip-by-trip earnings breakdown.
+    - generic [ref=e90] [cursor=pointer]: Open Earnings

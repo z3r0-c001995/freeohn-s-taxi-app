@@ -93,7 +93,7 @@ export function AppButton({
       disabled={disabled || loading}
       style={({ pressed }) => [
         {
-          borderRadius: radii.md,
+          borderRadius: radii.lg, // More rounded for premium feel
           borderWidth: 1,
           borderColor: variantStyles.borderColor,
           backgroundColor: pressed
@@ -108,9 +108,9 @@ export function AppButton({
           flexDirection: "row",
           gap: 8,
           width: fullWidth ? "100%" : undefined,
-          opacity: disabled || loading ? 0.72 : 1,
+          opacity: disabled || loading ? 0.6 : 1,
         },
-        activeVariant === "primary" || activeVariant === "secondary" ? shadows.sm : null,
+        activeVariant === "primary" || activeVariant === "secondary" ? shadows.md : null,
         style,
       ]}
     >

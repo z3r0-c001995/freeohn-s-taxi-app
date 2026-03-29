@@ -15,9 +15,10 @@ const boolFromEnv = (key: string, fallback: boolean): boolean => {
 
 export const rideConfig: RideHailingConfig = {
   dispatchRadiusKm: numberFromEnv("DISPATCH_RADIUS_KM", 10),
-  offerTimeoutMs: numberFromEnv("DISPATCH_OFFER_TIMEOUT_MS", 15_000),
+  offerTimeoutMs: numberFromEnv("DISPATCH_OFFER_TIMEOUT_MS", 60_000),
   maxDriverCandidates: numberFromEnv("DISPATCH_MAX_CANDIDATES", 10),
-  driverStaleAfterMs: numberFromEnv("DRIVER_STALE_AFTER_MS", 15_000),
+  // Web browsers can throttle background timers; keep default presence TTL tolerant.
+  driverStaleAfterMs: numberFromEnv("DRIVER_STALE_AFTER_MS", 60_000),
   driverLocationMaxSpeedKmh: numberFromEnv("DRIVER_LOCATION_MAX_SPEED_KMH", 180),
   driverLocationMaxJumpMeters: numberFromEnv("DRIVER_LOCATION_MAX_JUMP_METERS", 2_000),
   driverLocationMaxJumpWindowMs: numberFromEnv("DRIVER_LOCATION_MAX_JUMP_WINDOW_MS", 12_000),

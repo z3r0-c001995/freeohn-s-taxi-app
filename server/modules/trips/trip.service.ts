@@ -1,6 +1,11 @@
 import type {
   CreateTripRequest,
+  DriverCommercialProfile,
+  DriverDocumentPlaceholders,
+  DriverProfileAudit,
+  DriverCompliance,
   DriverStatusRequest,
+  DriverPersonalInfo,
   NearbyDriversRequest,
   TripRecord,
   TripState,
@@ -36,6 +41,18 @@ type DriverProfileInput = {
   vehicleModel: string;
   vehicleColor: string;
   plateNumber: string;
+  account?: {
+    openId?: string;
+    password?: string;
+    isActive?: boolean;
+  };
+  personalInfo?: Partial<DriverPersonalInfo>;
+  compliance?: Partial<DriverCompliance>;
+  commercial?: {
+    ridesPurchased?: number;
+    notes?: string | null;
+  };
+  documents?: Partial<DriverDocumentPlaceholders>;
 };
 
 class TripService {
@@ -61,28 +78,144 @@ class TripService {
       },
     });
 
-    // Dev bootstrap: ensures company-registered demo driver can go online
-    // without requiring an admin registration call.
-    if (!platformStore.getDriverByUserId(2001001)) {
-      const demoDriverId = "driver_demo_2001001";
-      platformStore.upsertDriverProfile({
-        driverId: demoDriverId,
+    // Dev bootstrap: pre-register multiple company-managed demo drivers
+    // for local multi-driver dispatch testing.
+    const demoDrivers = [
+      {
         userId: 2001001,
-        verified: true,
+        driverId: "driver_demo_2001001",
         rating: 4.8,
         totalTrips: 156,
-        vehicle: {
-          make: "Toyota",
-          model: "Prius",
-          color: "Silver",
-          plateNumber: "KAA111A",
+        vehicle: { make: "Toyota", model: "Prius", color: "Silver", plateNumber: "KAA111A" },
+        personalInfo: {
+          fullName: "Demo Driver 1",
+          phoneNumber: "+260971000001",
+          nrcNumber: "111111/11/1",
+          homeAddress: "Kabulonga, Lusaka",
+          emergencyContactName: "Ops Desk",
+          emergencyContactPhone: "+260970000100",
         },
-      });
-      platformStore.setDriverStatus(demoDriverId, {
-        isOnline: false,
-        activeTripId: null,
-      });
+      },
+      {
+        userId: 2001002,
+        driverId: "driver_demo_2001002",
+        rating: 4.7,
+        totalTrips: 203,
+        vehicle: { make: "Nissan", model: "Note", color: "White", plateNumber: "KBB204B" },
+        personalInfo: {
+          fullName: "Demo Driver 2",
+          phoneNumber: "+260971000002",
+          nrcNumber: "222222/22/2",
+          homeAddress: "Longacres, Lusaka",
+          emergencyContactName: "Ops Desk",
+          emergencyContactPhone: "+260970000100",
+        },
+      },
+      {
+        userId: 2001003,
+        driverId: "driver_demo_2001003",
+        rating: 4.9,
+        totalTrips: 311,
+        vehicle: { make: "Honda", model: "Fit", color: "Blue", plateNumber: "KCC309C" },
+        personalInfo: {
+          fullName: "Demo Driver 3",
+          phoneNumber: "+260971000003",
+          nrcNumber: "333333/33/3",
+          homeAddress: "Chalala, Lusaka",
+          emergencyContactName: "Ops Desk",
+          emergencyContactPhone: "+260970000100",
+        },
+      },
+      {
+        userId: 2001004,
+        driverId: "driver_demo_2001004",
+        rating: 4.6,
+        totalTrips: 128,
+        vehicle: { make: "Suzuki", model: "Swift", color: "Gray", plateNumber: "KDD412D" },
+        personalInfo: {
+          fullName: "Demo Driver 4",
+          phoneNumber: "+260971000004",
+          nrcNumber: "444444/44/4",
+          homeAddress: "Woodlands, Lusaka",
+          emergencyContactName: "Ops Desk",
+          emergencyContactPhone: "+260970000100",
+        },
+      },
+    ] as const;
+
+    for (const demoDriver of demoDrivers) {
+      if (!platformStore.getDriverByUserId(demoDriver.userId)) {
+        const nowIso = new Date().toISOString();
+        platformStore.upsertDriverProfile({
+          driverId: demoDriver.driverId,
+          userId: demoDriver.userId,
+          verified: true,
+          rating: demoDriver.rating,
+          totalTrips: demoDriver.totalTrips,
+          vehicle: demoDriver.vehicle,
+          personalInfo: demoDriver.personalInfo,
+          compliance: {
+            driversLicenseNumber: `DL-${demoDriver.userId}`,
+            vehicleRegistrationNumber: `VR-${demoDriver.userId}`,
+            hasDriversLicense: true,
+            hasVehicleRegistrationDocument: true,
+            insured: true,
+            roadTaxCleared: true,
+            fitnessTestPassed: true,
+          },
+          commercial: {
+            ridesPurchased: 500,
+            ridesCompleted: Math.min(500, demoDriver.totalTrips),
+            notes: "Company seeded demo account",
+          },
+          documents: {
+            driversLicenseDocumentRef: `dl_${demoDriver.userId}.pdf`,
+            vehicleRegistrationDocumentRef: `reg_${demoDriver.userId}.pdf`,
+            insuranceDocumentRef: `insurance_${demoDriver.userId}.pdf`,
+            roadTaxDocumentRef: `road_tax_${demoDriver.userId}.pdf`,
+            fitnessCertificateDocumentRef: `fitness_${demoDriver.userId}.pdf`,
+          },
+          audit: {
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            createdByAdminId: 9001,
+            updatedByAdminId: 9001,
+            verificationReviewedAt: nowIso,
+            compliance: {
+              driversLicenseCheckedAt: nowIso,
+              vehicleRegistrationCheckedAt: nowIso,
+              insuranceCheckedAt: nowIso,
+              roadTaxCheckedAt: nowIso,
+              fitnessCheckedAt: nowIso,
+            },
+          },
+        });
+      }
+
+      if (!platformStore.getDriverAccountByDriverId(demoDriver.driverId)) {
+        platformStore.upsertDriverAccount({
+          driverId: demoDriver.driverId,
+          userId: demoDriver.userId,
+          openId: String(demoDriver.userId),
+          passwordHash: this.hashDriverCredential(String(demoDriver.userId), "123456"),
+          isActive: true,
+          passwordUpdatedAt: new Date().toISOString(),
+          lastLoginAt: null,
+        });
+      }
+
+      const existingStatus = platformStore.getDriverStatus(demoDriver.driverId);
+      if (!existingStatus) {
+        platformStore.setDriverStatus(demoDriver.driverId, {
+          isOnline: false,
+          activeTripId: null,
+        });
+      }
     }
+  }
+
+  private hashDriverCredential(openId: string, password: string): string {
+    return hashPin(`driver:${openId}:${password}`);
   }
 
   estimateFare(input: {
@@ -184,9 +317,99 @@ class TripService {
     input: DriverProfileInput & { verified?: boolean },
   ) {
     this.assertRole(adminUser, ["admin"]);
+    const nowIso = new Date().toISOString();
     const existing = platformStore.getDriverByUserId(targetUserId);
     const driverId = existing?.driverId ?? createId("driver");
-    const next = platformStore.upsertDriverProfile({
+    const mergedPersonalInfo: DriverPersonalInfo = {
+      fullName: input.personalInfo?.fullName?.trim() || existing?.personalInfo?.fullName || `Driver ${targetUserId}`,
+      phoneNumber: input.personalInfo?.phoneNumber?.trim() || existing?.personalInfo?.phoneNumber || "",
+      nrcNumber: input.personalInfo?.nrcNumber?.trim() || existing?.personalInfo?.nrcNumber || "",
+      homeAddress: input.personalInfo?.homeAddress?.trim() || existing?.personalInfo?.homeAddress || "",
+      emergencyContactName:
+        input.personalInfo?.emergencyContactName?.trim() ||
+        existing?.personalInfo?.emergencyContactName ||
+        null,
+      emergencyContactPhone:
+        input.personalInfo?.emergencyContactPhone?.trim() ||
+        existing?.personalInfo?.emergencyContactPhone ||
+        null,
+    };
+    const mergedCompliance: DriverCompliance = {
+      driversLicenseNumber:
+        input.compliance?.driversLicenseNumber?.trim() || existing?.compliance?.driversLicenseNumber || "",
+      vehicleRegistrationNumber:
+        input.compliance?.vehicleRegistrationNumber?.trim() ||
+        existing?.compliance?.vehicleRegistrationNumber ||
+        "",
+      hasDriversLicense: input.compliance?.hasDriversLicense ?? existing?.compliance?.hasDriversLicense ?? false,
+      hasVehicleRegistrationDocument:
+        input.compliance?.hasVehicleRegistrationDocument ??
+        existing?.compliance?.hasVehicleRegistrationDocument ??
+        false,
+      insured: input.compliance?.insured ?? existing?.compliance?.insured ?? false,
+      roadTaxCleared: input.compliance?.roadTaxCleared ?? existing?.compliance?.roadTaxCleared ?? false,
+      fitnessTestPassed: input.compliance?.fitnessTestPassed ?? existing?.compliance?.fitnessTestPassed ?? false,
+    };
+    const mergedCommercial: DriverCommercialProfile = {
+      ridesPurchased: Math.max(
+        0,
+        input.commercial?.ridesPurchased ?? existing?.commercial?.ridesPurchased ?? 0,
+      ),
+      ridesCompleted: Math.max(0, existing?.commercial?.ridesCompleted ?? 0),
+      notes:
+        input.commercial?.notes?.trim() ??
+        existing?.commercial?.notes ??
+        null,
+    };
+    const mergedDocuments: DriverDocumentPlaceholders = {
+      driversLicenseDocumentRef:
+        input.documents?.driversLicenseDocumentRef?.trim() ||
+        existing?.documents?.driversLicenseDocumentRef ||
+        "",
+      vehicleRegistrationDocumentRef:
+        input.documents?.vehicleRegistrationDocumentRef?.trim() ||
+        existing?.documents?.vehicleRegistrationDocumentRef ||
+        "",
+      insuranceDocumentRef:
+        input.documents?.insuranceDocumentRef?.trim() ||
+        existing?.documents?.insuranceDocumentRef ||
+        "",
+      roadTaxDocumentRef:
+        input.documents?.roadTaxDocumentRef?.trim() ||
+        existing?.documents?.roadTaxDocumentRef ||
+        "",
+      fitnessCertificateDocumentRef:
+        input.documents?.fitnessCertificateDocumentRef?.trim() ||
+        existing?.documents?.fitnessCertificateDocumentRef ||
+        "",
+    };
+    const mergedAudit: DriverProfileAudit = {
+      createdAt: existing?.audit?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+      createdByAdminId: existing?.audit?.createdByAdminId ?? adminUser.id,
+      updatedByAdminId: adminUser.id,
+      verificationReviewedAt:
+        input.verified === true ? nowIso : existing?.audit?.verificationReviewedAt ?? null,
+      compliance: {
+        driversLicenseCheckedAt: input.compliance?.hasDriversLicense
+          ? nowIso
+          : existing?.audit?.compliance?.driversLicenseCheckedAt ?? null,
+        vehicleRegistrationCheckedAt: input.compliance?.hasVehicleRegistrationDocument
+          ? nowIso
+          : existing?.audit?.compliance?.vehicleRegistrationCheckedAt ?? null,
+        insuranceCheckedAt: input.compliance?.insured
+          ? nowIso
+          : existing?.audit?.compliance?.insuranceCheckedAt ?? null,
+        roadTaxCheckedAt: input.compliance?.roadTaxCleared
+          ? nowIso
+          : existing?.audit?.compliance?.roadTaxCheckedAt ?? null,
+        fitnessCheckedAt: input.compliance?.fitnessTestPassed
+          ? nowIso
+          : existing?.audit?.compliance?.fitnessCheckedAt ?? null,
+      },
+    };
+
+    const profileCandidate = {
       driverId,
       userId: targetUserId,
       verified: input.verified ?? existing?.verified ?? false,
@@ -198,7 +421,48 @@ class TripService {
         color: input.vehicleColor,
         plateNumber: input.plateNumber,
       },
+      personalInfo: mergedPersonalInfo,
+      compliance: mergedCompliance,
+      commercial: mergedCommercial,
+      documents: mergedDocuments,
+      audit: mergedAudit,
+    };
+
+    if (profileCandidate.verified) {
+      this.assertDriverReadyForVerification(profileCandidate);
+    }
+
+    const next = platformStore.upsertDriverProfile({
+      ...profileCandidate,
     });
+
+    const existingAccount = platformStore.getDriverAccountByDriverId(driverId);
+    const accountOpenId =
+      input.account?.openId?.trim() ||
+      existingAccount?.openId ||
+      mergedPersonalInfo.phoneNumber.trim() ||
+      String(targetUserId);
+    const accountPassword = input.account?.password?.trim() || null;
+    const accountIsActive = input.account?.isActive ?? existingAccount?.isActive ?? true;
+    const passwordHash =
+      accountPassword && accountPassword.length > 0
+        ? this.hashDriverCredential(accountOpenId, accountPassword)
+        : existingAccount?.passwordHash ?? this.hashDriverCredential(accountOpenId, "123456");
+    const passwordUpdatedAt =
+      accountPassword && accountPassword.length > 0
+        ? nowIso
+        : existingAccount?.passwordUpdatedAt ?? nowIso;
+
+    platformStore.upsertDriverAccount({
+      driverId,
+      userId: targetUserId,
+      openId: accountOpenId,
+      passwordHash,
+      isActive: accountIsActive,
+      passwordUpdatedAt,
+      lastLoginAt: existingAccount?.lastLoginAt ?? null,
+    });
+
     platformStore.setDriverStatus(driverId, {
       isOnline: false,
       activeTripId: null,
@@ -206,15 +470,159 @@ class TripService {
     return next;
   }
 
-  verifyDriver(driverId: string, verified: boolean) {
+  verifyDriver(adminUser: AuthUser, driverId: string, verified: boolean) {
+    this.assertRole(adminUser, ["admin"]);
     const profile = platformStore.getDriverById(driverId);
     if (!profile) {
       throw new Error("Driver not found");
     }
+    const nowIso = new Date().toISOString();
+    if (verified) {
+      this.assertDriverReadyForVerification(profile);
+    }
     return platformStore.upsertDriverProfile({
       ...profile,
       verified,
+      audit: {
+        ...profile.audit,
+        updatedAt: nowIso,
+        updatedByAdminId: adminUser.id,
+        verificationReviewedAt: verified ? nowIso : profile.audit.verificationReviewedAt,
+      },
     });
+  }
+
+  addDriverRideCredits(adminUser: AuthUser, driverId: string, ridesToAdd: number) {
+    this.assertRole(adminUser, ["admin"]);
+    const profile = platformStore.getDriverById(driverId);
+    if (!profile) {
+      throw new Error("Driver not found");
+    }
+    const currentCommercial = profile.commercial ?? {
+      ridesPurchased: 0,
+      ridesCompleted: 0,
+      notes: null,
+    };
+    return platformStore.upsertDriverProfile({
+      ...profile,
+      commercial: {
+        ...currentCommercial,
+        ridesPurchased: currentCommercial.ridesPurchased + ridesToAdd,
+      },
+      audit: {
+        ...profile.audit,
+        updatedAt: new Date().toISOString(),
+        updatedByAdminId: adminUser.id,
+      },
+    });
+  }
+
+  updateDriverAccountCredentials(
+    adminUser: AuthUser,
+    driverId: string,
+    payload: { openId?: string; password?: string; isActive?: boolean },
+  ) {
+    this.assertRole(adminUser, ["admin"]);
+    const profile = platformStore.getDriverById(driverId);
+    if (!profile) {
+      throw new Error("Driver not found");
+    }
+
+    const existingAccount = platformStore.getDriverAccountByDriverId(driverId);
+    const openId = payload.openId?.trim() || existingAccount?.openId || String(profile.userId);
+    const nextIsActive = payload.isActive ?? existingAccount?.isActive ?? true;
+    const trimmedPassword = payload.password?.trim() || null;
+    const nowIso = new Date().toISOString();
+
+    const passwordHash =
+      trimmedPassword && trimmedPassword.length > 0
+        ? this.hashDriverCredential(openId, trimmedPassword)
+        : existingAccount?.passwordHash ?? this.hashDriverCredential(openId, "123456");
+    const passwordUpdatedAt =
+      trimmedPassword && trimmedPassword.length > 0
+        ? nowIso
+        : existingAccount?.passwordUpdatedAt ?? nowIso;
+
+    const nextAccount = platformStore.upsertDriverAccount({
+      driverId,
+      userId: profile.userId,
+      openId,
+      passwordHash,
+      isActive: nextIsActive,
+      passwordUpdatedAt,
+      lastLoginAt: existingAccount?.lastLoginAt ?? null,
+    });
+
+    return {
+      driverId: nextAccount.driverId,
+      userId: nextAccount.userId,
+      openId: nextAccount.openId,
+      isActive: nextAccount.isActive,
+      passwordUpdatedAt: nextAccount.passwordUpdatedAt,
+      lastLoginAt: nextAccount.lastLoginAt,
+    };
+  }
+
+  authenticateDriverByCredentials(openId: string, password: string) {
+    const trimmedOpenId = openId.trim();
+    const trimmedPassword = password.trim();
+    if (!trimmedOpenId || !trimmedPassword) {
+      throw new Error("Open ID and password are required.");
+    }
+
+    const account = platformStore.getDriverAccountByOpenId(trimmedOpenId);
+    if (!account || !account.isActive) {
+      throw new Error("Invalid driver credentials.");
+    }
+
+    const expectedHash = this.hashDriverCredential(account.openId, trimmedPassword);
+    if (!constantTimeEqual(expectedHash, account.passwordHash)) {
+      throw new Error("Invalid driver credentials.");
+    }
+
+    const profile = platformStore.getDriverById(account.driverId);
+    if (!profile) {
+      throw new Error("Driver profile not found.");
+    }
+
+    const updatedAccount = platformStore.upsertDriverAccount({
+      ...account,
+      lastLoginAt: new Date().toISOString(),
+    });
+
+    return {
+      profile,
+      account: {
+        driverId: updatedAccount.driverId,
+        userId: updatedAccount.userId,
+        openId: updatedAccount.openId,
+        isActive: updatedAccount.isActive,
+        passwordUpdatedAt: updatedAccount.passwordUpdatedAt,
+        lastLoginAt: updatedAccount.lastLoginAt,
+      },
+    };
+  }
+
+  updateDriverPayoutSettings(
+    user: AuthUser,
+    payload: { payoutMethod?: "MOBILE_MONEY" | "BANK" | null; payoutAccountNumber?: string | null },
+  ) {
+    this.assertRole(user, ["driver", "admin"]);
+    const profile = this.getRequiredDriverProfile(user.id);
+    const updatedProfile = platformStore.upsertDriverProfile({
+      ...profile,
+      personalInfo: {
+        ...profile.personalInfo,
+        payoutMethod: payload.payoutMethod !== undefined ? payload.payoutMethod : profile.personalInfo.payoutMethod,
+        payoutAccountNumber: payload.payoutAccountNumber !== undefined ? payload.payoutAccountNumber : profile.personalInfo.payoutAccountNumber,
+      },
+      audit: {
+        ...profile.audit,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+
+    return updatedProfile;
   }
 
   setDriverStatus(user: AuthUser, payload: DriverStatusRequest) {
@@ -222,6 +630,9 @@ class TripService {
     const profile = this.getRequiredDriverProfile(user.id);
     if (payload.isOnline && !profile.verified) {
       throw new Error("Driver must be verified before going online");
+    }
+    if (payload.isOnline && this.getDriverRemainingRideCredits(profile) <= 0) {
+      throw new Error("Driver has no ride credits. Purchase ride credits from admin.");
     }
     return platformStore.setDriverStatus(profile.driverId, {
       isOnline: payload.isOnline,
@@ -310,6 +721,58 @@ class TripService {
       startPin,
       events,
     };
+  }
+
+  getActiveTrip(user: AuthUser) {
+    this.assertRole(user, ["rider", "driver", "admin"]);
+
+    if (user.role === "rider") {
+      const active = platformStore
+        .listTripsForRider(user.id)
+        .find((trip) => !isTerminalTripState(trip.state));
+      return active ? this.getTrip(user, active.id) : null;
+    }
+
+    if (user.role === "driver") {
+      const profile = platformStore.getDriverByUserId(user.id);
+      if (!profile) return null;
+      const active = platformStore
+        .listTripsForDriver(profile.driverId)
+        .find((trip) => !isTerminalTripState(trip.state));
+      return active ? this.getTrip(user, active.id) : null;
+    }
+
+    const active = platformStore
+      .getSnapshot()
+      .trips.filter((trip) => !isTerminalTripState(trip.state))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    return active ? this.getTrip(user, active.id) : null;
+  }
+
+  listTrips(user: AuthUser) {
+    this.assertRole(user, ["rider", "driver", "admin"]);
+    let rawTrips: TripRecord[];
+    if (user.role === "rider") {
+      rawTrips = platformStore.listTripsForRider(user.id);
+    } else if (user.role === "driver") {
+      const profile = platformStore.getDriverByUserId(user.id);
+      rawTrips = profile ? platformStore.listTripsForDriver(profile.driverId) : [];
+    } else {
+      rawTrips = platformStore.getSnapshot().trips;
+    }
+    return rawTrips.map((t) => ({
+      id: t.id,
+      riderId: t.riderId,
+      driverId: t.driverId,
+      pickup: t.pickup,
+      dropoff: t.dropoff,
+      state: t.state,
+      fare: t.fare,
+      createdAt: t.createdAt,
+      completedAt: t.completedAt,
+      cancelledAt: t.cancelledAt,
+      paymentMethod: t.paymentMethod,
+    }));
   }
 
   listDriverRequests(user: AuthUser) {
@@ -429,10 +892,19 @@ class TripService {
     });
 
     platformStore.setDriverStatus(profile.driverId, { activeTripId: null });
-    platformStore.upsertDriverProfile({
+    const updatedProfile = platformStore.upsertDriverProfile({
       ...profile,
       totalTrips: profile.totalTrips + 1,
+      commercial: {
+        ridesPurchased: profile.commercial?.ridesPurchased ?? 0,
+        ridesCompleted: (profile.commercial?.ridesCompleted ?? 0) + 1,
+        notes: profile.commercial?.notes ?? null,
+      },
     });
+
+    if (this.getDriverRemainingRideCredits(updatedProfile) <= 0) {
+      platformStore.setDriverStatus(profile.driverId, { isOnline: false });
+    }
 
     const payment = await paymentService.capture(completedTrip.paymentMethod, {
       tripId: completedTrip.id,
@@ -684,6 +1156,71 @@ class TripService {
   private assertRole(user: AuthUser, roles: UserRole[]): void {
     if (!roles.includes(user.role)) {
       throw new Error(`Role ${user.role} cannot perform this operation`);
+    }
+  }
+
+  private getDriverRemainingRideCredits(profile: {
+    commercial?: { ridesPurchased: number; ridesCompleted: number } | null;
+  }): number {
+    const ridesPurchased = profile.commercial?.ridesPurchased ?? 0;
+    const ridesCompleted = profile.commercial?.ridesCompleted ?? 0;
+    return Math.max(0, ridesPurchased - ridesCompleted);
+  }
+
+  private assertDriverReadyForVerification(profile: {
+    personalInfo?: DriverPersonalInfo | null;
+    compliance?: DriverCompliance | null;
+    commercial?: DriverCommercialProfile | null;
+    documents?: DriverDocumentPlaceholders | null;
+  }): void {
+    const personal = profile.personalInfo;
+    if (!personal) throw new Error("Driver personal information is required for verification");
+    if (!personal.fullName.trim()) throw new Error("Driver full name is required for verification");
+    if (!personal.phoneNumber.trim()) throw new Error("Driver phone number is required for verification");
+    if (!personal.nrcNumber.trim()) throw new Error("Driver NRC number is required for verification");
+    if (!personal.homeAddress.trim()) throw new Error("Driver home address is required for verification");
+
+    const compliance = profile.compliance;
+    if (!compliance) throw new Error("Driver compliance checklist is required for verification");
+    if (!compliance.driversLicenseNumber.trim()) {
+      throw new Error("Driver license number is required for verification");
+    }
+    if (!compliance.vehicleRegistrationNumber.trim()) {
+      throw new Error("Vehicle registration number is required for verification");
+    }
+    if (!compliance.hasDriversLicense) {
+      throw new Error("Driver license document must be confirmed");
+    }
+    if (!compliance.hasVehicleRegistrationDocument) {
+      throw new Error("Vehicle registration document must be confirmed");
+    }
+    if (!compliance.insured) {
+      throw new Error("Vehicle insurance must be confirmed");
+    }
+    if (!compliance.roadTaxCleared) {
+      throw new Error("Road tax clearance (RATSA) must be confirmed");
+    }
+    if (!compliance.fitnessTestPassed) {
+      throw new Error("Vehicle fitness test must be confirmed");
+    }
+    const documents = profile.documents;
+    if (!documents?.driversLicenseDocumentRef.trim()) {
+      throw new Error("Driver license document reference is required");
+    }
+    if (!documents?.vehicleRegistrationDocumentRef.trim()) {
+      throw new Error("Vehicle registration document reference is required");
+    }
+    if (!documents?.insuranceDocumentRef.trim()) {
+      throw new Error("Insurance document reference is required");
+    }
+    if (!documents?.roadTaxDocumentRef.trim()) {
+      throw new Error("Road tax document reference is required");
+    }
+    if (!documents?.fitnessCertificateDocumentRef.trim()) {
+      throw new Error("Fitness certificate document reference is required");
+    }
+    if (this.getDriverRemainingRideCredits(profile) <= 0) {
+      throw new Error("Driver must purchase ride credits before verification");
     }
   }
 

@@ -21,6 +21,7 @@ import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-run
 import { initializeDatabase } from "@/lib/db";
 import { useAppStore } from "@/lib/store";
 import { StartupSplash } from "@/components/startup-splash";
+import { ActiveRideBanner } from "@/components/active-ride-banner";
 import * as SplashScreen from "expo-splash-screen";
 
 void SplashScreen.preventAutoHideAsync().catch(() => {
@@ -42,7 +43,7 @@ export default function RootLayout() {
   const [frame, setFrame] = useState<Rect>(initialFrame);
   const [isInitialized, setIsInitialized] = useState(false);
   const [showStartupSplash, setShowStartupSplash] = useState(true);
-  const { hydrate } = useAppStore();
+  const { hydrate, isHydrated } = useAppStore();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -69,7 +70,7 @@ export default function RootLayout() {
 
     async function prepare() {
       const dbInitTimeoutMs = Platform.OS === "web" ? 3500 : 12000;
-      const hydrateTimeoutMs = Platform.OS === "web" ? 3000 : 6000;
+      const hydrateTimeoutMs = Platform.OS === "web" ? 10000 : 6000;
 
       try {
         console.log("[startup] init runtime");
@@ -130,7 +131,7 @@ export default function RootLayout() {
     return <StartupSplash />;
   }
 
-  if (!isInitialized) {
+  if (!isInitialized || !isHydrated) {
     return null;
   }
 
@@ -145,6 +146,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="oauth/callback" />
           </Stack>
+          <ActiveRideBanner />
           <StatusBar style="auto" />
         </QueryClientProvider>
       </trpc.Provider>

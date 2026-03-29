@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Image, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import { Alert, Image, Linking, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 
@@ -15,7 +15,7 @@ import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useAppStore } from "@/lib/store";
 import { trpc } from "@/lib/trpc";
-import { calculateDistance } from "@/lib/ride-utils";
+import { calculateDistance, mapRemoteTripToLocal } from "@/lib/ride-utils";
 import {
   getAvailableRides,
   getDriverProfile,
@@ -36,48 +36,20 @@ import {
 } from "@/lib/ride-hailing-api";
 import type { NearbyDriverMarker } from "@/lib/maps/map-types";
 
-function mapRemoteTripToLocal(remoteTrip: any) {
-  return {
-    id: remoteTrip.id,
-    riderId: remoteTrip.riderId,
-    driverId: remoteTrip.driverId ?? null,
-    pickupLat: String(remoteTrip.pickup?.lat ?? ""),
-    pickupLng: String(remoteTrip.pickup?.lng ?? ""),
-    dropoffLat: String(remoteTrip.dropoff?.lat ?? ""),
-    dropoffLng: String(remoteTrip.dropoff?.lng ?? ""),
-    pickupAddress: remoteTrip.pickup?.address ?? null,
-    dropoffAddress: remoteTrip.dropoff?.address ?? null,
-    rideType: remoteTrip.fare?.rideType ?? "standard",
-    status:
-      remoteTrip.state === "IN_PROGRESS"
-        ? "in_progress"
-        : remoteTrip.state === "COMPLETED"
-          ? "completed"
-          : remoteTrip.state === "CANCELLED_BY_DRIVER" || remoteTrip.state === "CANCELLED_BY_PASSENGER"
-            ? "cancelled"
-            : "accepted",
-    fareAmount: Number(remoteTrip.fare?.total ?? 0),
-    distanceMeters: Number(remoteTrip.fare?.distanceMeters ?? 0),
-    durationSeconds: Number(remoteTrip.fare?.durationSeconds ?? 0),
-    encodedPolyline: null,
-    requestedAt: new Date(remoteTrip.createdAt ?? Date.now()),
-    acceptedAt: remoteTrip.matchedAt ? new Date(remoteTrip.matchedAt) : null,
-    startedAt: remoteTrip.startedAt ? new Date(remoteTrip.startedAt) : null,
-    completedAt: remoteTrip.completedAt ? new Date(remoteTrip.completedAt) : null,
-    cancelledAt: remoteTrip.cancelledAt ? new Date(remoteTrip.cancelledAt) : null,
-    queuedSync: false,
-  };
-}
+
 
 export default function HomeScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const brand = useBrandTheme();
-  const defaultLocation = { latitude: -15.4162, longitude: 28.3115 };
+  // Default to Mansa District, Luapula Province, Zambia — the app's launch area
+  const defaultLocation = { latitude: -11.197, longitude: 28.891 };
   const {
     currentUser,
     setCurrentLocation,
     currentLocation,
     isAuthenticated,
+    isHydrated,
     driverProfile,
     setDriverProfile,
     activeRide,
@@ -87,6 +59,7 @@ export default function HomeScreen() {
     setIsAuthenticated,
     persist,
     rideHistory,
+    savedLocations,
   } = useAppStore();
 
   const { isTracking } = useLocationTracking();
@@ -98,14 +71,26 @@ export default function HomeScreen() {
   const lastResolvedLocationKeyRef = useRef("");
 
   useEffect(() => {
+    if (!isHydrated) return; // Wait for store to hydrate from AsyncStorage
+
     if (!isAuthenticated) {
+      // Avoid forcing onboarding when the app is opened directly on admin tooling routes.
+      if (pathname.startsWith("/admin")) {
+        return;
+      }
       router.replace("/(auth)/onboarding");
+      return;
+    }
+
+    // Driver app: redirect home tab straight to the driver dashboard
+    if (IS_DRIVER_APP) {
+      router.replace("/driver-dashboard" as never);
       return;
     }
 
     void requestLocationPermission();
     void loadDriverProfile();
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, pathname, router]);
 
   const loadDriverProfile = async () => {
     if (currentUser?.role === "driver" && currentUser.id) {
@@ -242,13 +227,25 @@ export default function HomeScreen() {
 
   const requestLocationPermission = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
         const location = await Location.getCurrentPositionAsync({});
         setCurrentLocation({ latitude: location.coords.latitude, longitude: location.coords.longitude });
-      } else if (!currentLocation) {
-        // Keep app usable for web testing when browser geolocation is blocked.
-        setCurrentLocation(defaultLocation);
+      } else {
+        if (!canAskAgain) {
+          Alert.alert(
+            "Location Permission Required",
+            "Please enable location services in your device settings to use this app.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() }
+            ]
+          );
+        }
+        if (!currentLocation) {
+          // Keep app usable for web testing when browser geolocation is blocked.
+          setCurrentLocation(defaultLocation);
+        }
       }
     } catch (error) {
       console.error("Location permission error:", error);
@@ -268,10 +265,6 @@ export default function HomeScreen() {
 
   const handleOpenSafetyCenter = () => {
     router.push("/safety-center" as never);
-  };
-
-  const handleOpenDriverDispatch = () => {
-    router.push("/driver-dashboard" as never);
   };
 
   const handleOpenTripCenter = () => {
@@ -342,6 +335,7 @@ export default function HomeScreen() {
         acceptedRide = await getRideById(rideId);
       }
       setActiveRide(acceptedRide as any);
+      await persist();
       Alert.alert("Ride accepted", "Navigate to the pickup location.");
       await loadAvailableRides();
     } catch (error) {
@@ -368,6 +362,7 @@ export default function HomeScreen() {
       }
       if (updatedRide) {
         setActiveRide(updatedRide as any);
+        await persist();
       }
       Alert.alert("Ride started", "Trip is now in progress.");
     } catch (error) {
@@ -389,6 +384,7 @@ export default function HomeScreen() {
       if (updatedRide) {
         setActiveRide(null);
         addRideToHistory(updatedRide as any);
+        await persist();
       }
       Alert.alert("Ride completed", "Trip has been completed successfully.");
     } catch (error) {
@@ -442,315 +438,113 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer className="bg-background" containerClassName="bg-background">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View style={{ gap: 16, paddingBottom: 20 }}>
-          {currentUser.role === "rider" ? (
-            <>
-              <View
-                style={{
-                  borderRadius: radii.xl,
-                  padding: 18,
-                  backgroundColor: "#0A1E49",
-                  ...shadows.md,
-                }}
-              >
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: "#CBD5E1", fontSize: 13, fontWeight: "600" }}>Welcome back</Text>
-                    <Text style={{ marginTop: 5, color: "#FFFFFF", fontSize: 30, fontWeight: "800" }}>{currentUser.name}</Text>
-                    <View style={{ marginTop: 5, flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Image
-                        source={APP_LOGO}
-                        style={{ width: 20, height: 20, borderRadius: 6, backgroundColor: "#FFFFFF" }}
-                      />
-                      <Text style={{ color: "#CBD5E1", fontSize: 12 }}>{APP_LABEL}</Text>
-                    </View>
+      {/* Background Glows for Premium Feel */}
+      <View style={{ position: "absolute", top: -100, right: -50, width: 300, height: 300, borderRadius: 150, backgroundColor: "rgba(247, 115, 22, 0.08)" }} />
+      <View style={{ position: "absolute", bottom: 100, left: -100, width: 400, height: 400, borderRadius: 200, backgroundColor: "rgba(30, 64, 175, 0.05)" }} />
+
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        {/* Header Section */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ fontSize: 32, fontWeight: "800", color: brand.text }}>Hello, {currentUser.name?.split(' ')[0] || 'User'}</Text>
+          <Text style={{ fontSize: 16, color: brand.textMuted, marginTop: 4 }}>Ready to book a ride?</Text>
+        </View>
+
+        {/* Search Card */}
+        <AppCard style={{ marginBottom: 20, padding: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: brand.surfaceMuted, borderRadius: radii.lg, paddingHorizontal: 16, height: 56 }}>
+            <Ionicons name="location" size={20} color={brand.primary} />
+            <Text style={{ flex: 1, marginLeft: 10, color: brand.textMuted, fontSize: 16 }}>
+              Enter your destination
+            </Text>
+            <TouchableOpacity 
+              onPress={handleRequestRide}
+              style={{ backgroundColor: brand.accent, paddingHorizontal: 20, paddingVertical: 8, borderRadius: radii.md }}
+            >
+              <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Ride</Text>
+            </TouchableOpacity>
+          </View>
+        </AppCard>
+
+        {/* Home/Work Shortcuts */}
+        {IS_SEEKER_APP && (
+          <View style={{ flexDirection: "row", gap: 12, marginBottom: 24 }}>
+            {(['home', 'work'] as const).map((label) => {
+              const saved = savedLocations[label];
+              const icon = label === 'home' ? 'home' : 'briefcase';
+              const bg   = label === 'home' ? '#FFF7ED' : '#EFF6FF';
+              const color = label === 'home' ? brand.primary : brand.accent;
+              const chipLabel = saved ? label.charAt(0).toUpperCase() + label.slice(1) : `Add ${label}`;
+              return (
+                <TouchableOpacity
+                  key={label}
+                  onPress={() => {
+                    if (saved) {
+                      // Navigate to request-ride pre-filled with this destination
+                      router.push(`/request-ride?dest=${encodeURIComponent(saved.address)}&destLat=${saved.lat}&destLng=${saved.lng}` as never);
+                    } else {
+                      router.push('/request-ride' as never);
+                    }
+                  }}
+                  style={{ flex: 1, backgroundColor: brand.surface, borderRadius: radii.xl, padding: 16, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: brand.border, ...shadows.md }}
+                >
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: bg, alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name={icon as any} size={18} color={color} />
                   </View>
-                  <TouchableOpacity
-                    onPress={() => router.push("/(tabs)/settings")}
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 999,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: "rgba(255,255,255,0.16)",
-                      borderWidth: 1,
-                      borderColor: "rgba(255,255,255,0.18)",
-                    }}
-                  >
-                    <Ionicons name="person" size={21} color="#FFFFFF" />
-                  </TouchableOpacity>
+                  <Text style={{ marginLeft: 12, fontWeight: "700", color: saved ? brand.text : brand.textMuted, fontSize: 14 }}>{chipLabel}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Quick Actions */}
+        <View style={{ marginBottom: 32 }}>
+          <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text, marginBottom: 16 }}>Quick Actions</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            {[
+              { id: 'history', label: 'Receipts', icon: 'receipt', color: '#F97316', bg: '#FFF7ED', action: handleOpenRideHistory },
+              { id: 'promos', label: 'Promotions', icon: 'pricetag', color: '#22C55E', bg: '#F0FDF4', action: () => router.push('/promotions' as never) },
+              { id: 'favourites', label: 'Favourites', icon: 'heart', color: '#EF4444', bg: '#FFF1F2', action: () => router.push('/favourites' as never) },
+              { id: 'invite', label: 'Invite Friends', icon: 'person-add', color: '#8B5CF6', bg: '#F5F3FF', action: () => router.push('/invite-friends' as never) },
+            ].map((item) => (
+              <TouchableOpacity key={item.id} onPress={item.action} style={{ alignItems: "center", width: 100 }}>
+                <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: item.bg, alignItems: "center", justifyContent: "center", marginBottom: 8, ...shadows.sm }}>
+                  <Ionicons name={item.icon as any} size={28} color={item.color} />
                 </View>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: brand.textMuted, textAlign: "center" }}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-                <View style={{ marginTop: 14, flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                      borderRadius: 999,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      backgroundColor: "rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <Ionicons name="calendar-outline" size={14} color="#CBD5E1" />
-                    <Text style={{ color: "#CBD5E1", fontSize: 12, fontWeight: "600" }}>
-                      {dateLabel} • {timeLabel}
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                      borderRadius: 999,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      backgroundColor: "rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <Ionicons name="navigate-circle-outline" size={14} color="#CBD5E1" />
-                    <Text style={{ color: "#CBD5E1", fontSize: 12, fontWeight: "600" }}>GPS {isTracking ? "active" : "idle"}</Text>
-                  </View>
-                </View>
+        {/* Referral Card */}
+        <AppCard tone="primary" style={{ overflow: "hidden", padding: 0 }}>
+          <View style={{ padding: 20, flex: 1 }}>
+            <Text style={{ fontSize: 20, fontWeight: "800", color: brand.text }}>Earn Free Rides!</Text>
+            <Text style={{ fontSize: 14, color: brand.textMuted, marginTop: 8, marginBottom: 16, lineHeight: 20 }}>
+              Refer friends and get free rides together. Share your referral code now!
+            </Text>
+            <AppButton 
+              label="Invite Friends" 
+              fullWidth={false} 
+              size="sm" 
+              onPress={() => {}} 
+              style={{ paddingHorizontal: 24, borderRadius: radii.md }} 
+            />
+          </View>
+          <View style={{ position: "absolute", right: -20, bottom: -10, width: 150, height: 120 }}>
+             {/* Illustration Placeholder */}
+             <Ionicons name="people" size={120} color="rgba(247, 115, 22, 0.1)" />
+          </View>
+        </AppCard>
 
-                <View style={{ marginTop: 14, flexDirection: "row", gap: 10 }}>
-                  <View
-                    style={{
-                      flex: 1,
-                      borderRadius: radii.lg,
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
-                      backgroundColor: "rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <Text style={{ color: "#CBD5E1", fontSize: 11 }}>Nearby drivers</Text>
-                    <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>
-                      {nearbyDrivers.length}
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      flex: 1,
-                      borderRadius: radii.lg,
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
-                      backgroundColor: "rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <Text style={{ color: "#CBD5E1", fontSize: 11 }}>Tracking status</Text>
-                    <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>
-                      {isTracking ? "Online" : "Idle"}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
-                <RideMap
-                  userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
-                  nearbyDrivers={nearbyDrivers}
-                  style={{ height: 320 }}
-                />
-              </View>
-
-              <AppCard>
-                <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>Book a Ride</Text>
-                <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>
-                  Pickup: {currentLocationAddress}
-                </Text>
-                <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                  Live tracking: {isTracking ? "Active" : "Idle"}
-                </Text>
-
-                <View style={{ marginTop: 14 }}>
-                  <AppButton label="Request Ride" onPress={handleRequestRide} leftIcon={<Ionicons name="car-sport" size={16} color="#FFFFFF" />} />
-                </View>
-
-                <View style={{ marginTop: 10, flexDirection: "row", gap: 10 }}>
-                  <AppButton
-                    label="Safety"
-                    variant="outline"
-                    fullWidth={false}
-                    style={{ flex: 1 }}
-                    onPress={handleOpenSafetyCenter}
-                  />
-                  <AppButton
-                    label="History"
-                    variant="outline"
-                    fullWidth={false}
-                    style={{ flex: 1 }}
-                    onPress={handleOpenRideHistory}
-                  />
-                </View>
-
-                {lastNearbyUpdate ? (
-                  <Text style={{ marginTop: 10, fontSize: 11, color: brand.textMuted }}>
-                    Nearby updated: {new Date(lastNearbyUpdate).toLocaleTimeString()}
-                  </Text>
-                ) : null}
-              </AppCard>
-
-              {activeRide ? (
-                <AppCard tone="accent">
-                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Current Trip</Text>
-                  <Text style={{ marginTop: 8, fontSize: 13, color: brand.textMuted }}>
-                    Pickup: {activeRide.pickupAddress ?? "Pickup location selected"}
-                  </Text>
-                  <Text style={{ marginTop: 3, fontSize: 13, color: brand.textMuted }}>
-                    Dropoff: {activeRide.dropoffAddress ?? "Dropoff location selected"}
-                  </Text>
-                  <Text style={{ marginTop: 8, fontSize: 24, fontWeight: "800", color: brand.text }}>
-                    ${activeRide.fareAmount.toFixed(2)}
-                  </Text>
-
-                  <View style={{ marginTop: 12 }}>
-                    <AppButton label="Track Trip" variant="secondary" onPress={handleOpenTripCenter} />
-                  </View>
-                  {activeRide.driverId ? (
-                    <View style={{ marginTop: 8 }}>
-                      <AppButton label="Chat Driver" variant="outline" onPress={() => router.push("/(tabs)/chat")} />
-                    </View>
-                  ) : null}
-                </AppCard>
-              ) : null}
-
-              <AppCard tone="muted">
-                <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Ride Stats</Text>
-                <View style={{ marginTop: 8, flexDirection: "row", gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 12, color: brand.textMuted }}>Completed today</Text>
-                    <Text style={{ marginTop: 2, fontSize: 22, fontWeight: "800", color: brand.text }}>{todayCompleted}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 12, color: brand.textMuted }}>Payment</Text>
-                    <Text style={{ marginTop: 2, fontSize: 15, fontWeight: "700", color: brand.text }}>Cash</Text>
-                  </View>
-                </View>
-              </AppCard>
-            </>
-          ) : (
-            <>
-              <View
-                style={{
-                  borderRadius: radii.xl,
-                  padding: 18,
-                  backgroundColor: "#0F1E4A",
-                  ...shadows.md,
-                }}
-              >
-                <Text style={{ color: "#CBD5E1", fontSize: 13 }}>Welcome back</Text>
-                <Text style={{ marginTop: 4, color: "#FFFFFF", fontSize: 30, fontWeight: "800" }}>{currentUser.name}</Text>
-                <Text style={{ marginTop: 6, color: "#CBD5E1", fontSize: 13 }}>
-                  {driverProfile?.isOnline ? "Online and receiving requests" : "Offline"}
-                </Text>
-                <View style={{ marginTop: 12 }}>
-                  <AppButton
-                    label={driverProfile?.isOnline ? "Go Offline" : "Go Online"}
-                    variant={driverProfile?.isOnline ? "danger" : "success"}
-                    onPress={handleToggleOnline}
-                  />
-                </View>
-              </View>
-
-              <AppCard>
-                <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Driver Dispatch</Text>
-                <Text style={{ marginTop: 8, fontSize: 13, color: brand.textMuted }}>
-                  Date: {dateLabel} • {timeLabel}
-                </Text>
-                <Text style={{ marginTop: 4, fontSize: 13, color: brand.textMuted }}>GPS: {gpsLabel}</Text>
-                <Text style={{ marginTop: 4, fontSize: 13, color: brand.textMuted }}>
-                  Tracking: {isTracking ? "Active" : "Idle"}
-                </Text>
-                <View style={{ marginTop: 12 }}>
-                  <AppButton label="Open Driver Dashboard" variant="secondary" onPress={handleOpenDriverDispatch} />
-                </View>
-              </AppCard>
-
-              {availableRides.length > 0 ? (
-                <AppCard>
-                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Incoming Requests</Text>
-                  <View style={{ marginTop: 10, gap: 10 }}>
-                    {availableRides.map((ride) => {
-                      const pickupDistanceKm =
-                        driverProfile?.currentLat && driverProfile?.currentLng
-                          ? calculateDistance(
-                              parseFloat(driverProfile.currentLat),
-                              parseFloat(driverProfile.currentLng),
-                              parseFloat(ride.pickupLat),
-                              parseFloat(ride.pickupLng),
-                            )
-                          : 0;
-
-                      return (
-                        <View
-                          key={String(ride.id)}
-                          style={{
-                            borderRadius: radii.md,
-                            borderWidth: 1,
-                            borderColor: brand.border,
-                            backgroundColor: brand.surfaceMuted,
-                            padding: 12,
-                          }}
-                        >
-                          <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Ride {String(ride.id).slice(-6)}</Text>
-                          <Text style={{ marginTop: 5, fontSize: 12, color: brand.textMuted }}>
-                            Pickup {ride.pickupAddress ?? `${ride.pickupLat}, ${ride.pickupLng}`}
-                          </Text>
-                          <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
-                            Distance to pickup {pickupDistanceKm.toFixed(1)} km
-                          </Text>
-                          <View style={{ marginTop: 10, flexDirection: "row", gap: 8 }}>
-                            <AppButton
-                              label="Accept"
-                              variant="success"
-                              fullWidth={false}
-                              style={{ flex: 1 }}
-                              onPress={() => handleAcceptRide(String(ride.id))}
-                            />
-                            <AppButton
-                              label="Decline"
-                              variant="danger"
-                              fullWidth={false}
-                              style={{ flex: 1 }}
-                              onPress={() => handleDeclineRide(String(ride.id))}
-                            />
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </AppCard>
-              ) : null}
-
-              {activeRide ? (
-                <AppCard tone="accent">
-                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Active Trip</Text>
-                  <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>
-                    Pickup: {activeRide.pickupAddress ?? "Pickup location"}
-                  </Text>
-                  <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                    Dropoff: {activeRide.dropoffAddress ?? "Dropoff location"}
-                  </Text>
-                  <Text style={{ marginTop: 8, fontSize: 24, fontWeight: "800", color: brand.text }}>
-                    ${activeRide.fareAmount.toFixed(2)}
-                  </Text>
-                  {activeRide.status === "accepted" ? (
-                    <View style={{ marginTop: 10 }}>
-                      <AppButton label="Start Trip" variant="secondary" onPress={() => handleStartRide(activeRide.id.toString())} />
-                    </View>
-                  ) : null}
-                  {activeRide.status === "in_progress" ? (
-                    <View style={{ marginTop: 10 }}>
-                      <AppButton label="Complete Trip" variant="success" onPress={() => handleCompleteRide(activeRide.id.toString())} />
-                    </View>
-                  ) : null}
-                </AppCard>
-              ) : null}
-            </>
-          )}
+        {/* Map Preview (Minimized) */}
+        <View style={{ marginTop: 24, height: 200, borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
+          <RideMap
+            userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+            nearbyDrivers={nearbyDrivers}
+            style={{ height: 200 }}
+          />
         </View>
       </ScrollView>
     </ScreenContainer>

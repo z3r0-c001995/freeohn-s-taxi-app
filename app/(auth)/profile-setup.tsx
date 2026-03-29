@@ -28,9 +28,10 @@ export default function ProfileSetupScreen() {
 
   function buildFallbackUser() {
     const now = new Date();
+    const normalizedPhone = phone.replace(/\D/g, "");
     return {
       id: Date.now(),
-      openId: phone,
+      openId: normalizedPhone,
       name: name.trim(),
       email: email || null,
       loginMethod: "phone",

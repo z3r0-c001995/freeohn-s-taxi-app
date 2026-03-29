@@ -11,6 +11,26 @@ import type {
   TripStartRequest,
 } from "@/shared/ride-hailing";
 
+const withCacheBuster = (endpoint: string): string => {
+  if (Platform.OS !== "web") return endpoint;
+  const separator = endpoint.includes("?") ? "&" : "?";
+  return `${endpoint}${separator}t=${Date.now()}`;
+};
+
+export async function requestOtp(phone: string) {
+  return apiCall<any>("/api/auth/send-otp", {
+    method: "POST",
+    body: JSON.stringify({ phone }),
+  });
+}
+
+export async function verifyOtp(phone: string, code: string) {
+  return apiCall<any>("/api/auth/verify-otp", {
+    method: "POST",
+    body: JSON.stringify({ phone, code }),
+  });
+}
+
 export async function estimateTrip(payload: FareEstimateRequest) {
   return apiCall<{
     fare: {
@@ -38,6 +58,25 @@ export async function createTrip(payload: CreateTripRequest) {
 
 export async function getTrip(tripId: string) {
   return apiCall<any>(`/api/trips/${tripId}`);
+}
+
+export async function getTrips() {
+  return apiCall<any[]>("/api/trips");
+}
+
+export async function getActiveTrip() {
+  return apiCall<{ trip: any | null }>("/api/trips/active");
+}
+
+export async function getTripMessages(tripId: string) {
+  return apiCall<any[]>(`/api/trips/${tripId}/messages`);
+}
+
+export async function sendTripMessage(tripId: string, payload: { senderId: string; receiverId: string; message: string }) {
+  return apiCall<any>(`/api/trips/${tripId}/messages`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function cancelTrip(tripId: string, reason: string) {
@@ -73,6 +112,34 @@ export async function registerDriverByOwner(payload: {
   vehicleModel: string;
   vehicleColor: string;
   plateNumber: string;
+  personalInfo?: {
+    fullName: string;
+    phoneNumber: string;
+    nrcNumber: string;
+    homeAddress: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+  };
+  compliance?: {
+    driversLicenseNumber: string;
+    vehicleRegistrationNumber: string;
+    hasDriversLicense: boolean;
+    hasVehicleRegistrationDocument: boolean;
+    insured: boolean;
+    roadTaxCleared: boolean;
+    fitnessTestPassed: boolean;
+  };
+  commercial?: {
+    ridesPurchased: number;
+    notes?: string;
+  };
+  documents?: {
+    driversLicenseDocumentRef: string;
+    vehicleRegistrationDocumentRef: string;
+    insuranceDocumentRef: string;
+    roadTaxDocumentRef: string;
+    fitnessCertificateDocumentRef: string;
+  };
   verified?: boolean;
 }) {
   return apiCall<any>("/api/admin/drivers/register", {
@@ -88,8 +155,15 @@ export async function updateDriverStatus(payload: DriverStatusRequest) {
   });
 }
 
+export async function updateDriverPayoutSettings(payload: { payoutMethod?: string | null; payoutAccountNumber?: string | null }) {
+  return apiCall<any>("/api/driver/profile/payout", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getDriverRequests() {
-  return apiCall<{ requests: any[] }>("/api/driver/requests");
+  return apiCall<{ requests: any[] }>(withCacheBuster("/api/driver/requests"));
 }
 
 export async function acceptDriverRequest(offerId: string) {
@@ -128,14 +202,14 @@ export async function updateDriverLocation(payload: DriverLocationRequest) {
 }
 
 export async function getDriverDashboard() {
-  return apiCall<any>("/api/driver/dashboard");
+  return apiCall<any>(withCacheBuster("/api/driver/dashboard"));
 }
 
 export async function getNearbyDrivers(payload: NearbyDriversRequest) {
   return apiCall<{
     pickup: { lat: number; lng: number };
     radiusKm: number;
-    drivers: Array<{
+    drivers: {
       driverId: string;
       location: { lat: number; lng: number };
       rating: number;
@@ -143,7 +217,7 @@ export async function getNearbyDrivers(payload: NearbyDriversRequest) {
       distanceMeters: number;
       etaSeconds: number;
       lastSeenAt: string;
-    }>;
+    }[];
     fetchedAt: string;
   }>("/api/drivers/nearby", {
     method: "POST",

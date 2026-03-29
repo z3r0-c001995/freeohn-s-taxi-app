@@ -1,4 +1,4 @@
-import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,6 +13,7 @@ import { IS_DRIVER_APP } from "@/constants/app-variant";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useAppStore } from "@/lib/store";
 import { getDriverProfile, getUserByOpenId } from "@/lib/db-service";
+import { requestOtp, verifyOtp } from "@/lib/ride-hailing-api";
 
 const DEMO_REGISTERED_DRIVERS: Record<
   string,
@@ -136,29 +137,32 @@ export default function OTPVerificationScreen() {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 650));
+      await verifyOtp(phone, otp);
 
       if (IS_DRIVER_APP) {
         const normalizedPhone = normalizePhone(phone);
-        let user: any = null;
-        let profile: any = null;
+        const fallbackSession = normalizedPhone ? getFallbackDriverSession(normalizedPhone) : null;
+        let user: any = Platform.OS === "web" ? fallbackSession?.user ?? null : null;
+        let profile: any = Platform.OS === "web" ? fallbackSession?.profile ?? null : null;
 
-        try {
-          user =
-            (await getUserByOpenId(normalizedPhone)) ||
-            (normalizedPhone !== phone ? await getUserByOpenId(phone) : null);
-          if (user?.id) {
-            profile = await getDriverProfile(user.id.toString());
+        // For native builds we keep local SQLite fallback for offline-first behavior.
+        // For web, enforce backend-compatible demo identity to avoid local-only profiles
+        // that cannot receive dispatch offers from the shared backend.
+        if (Platform.OS !== "web") {
+          try {
+            user =
+              (await getUserByOpenId(normalizedPhone)) ||
+              (normalizedPhone !== phone ? await getUserByOpenId(phone) : null);
+            if (user?.id) {
+              profile = await getDriverProfile(user.id.toString());
+            }
+          } catch (dbError) {
+            console.warn("[auth] Driver lookup via SQLite failed, trying fallback session.", dbError);
           }
-        } catch (dbError) {
-          console.warn("[auth] Driver lookup via SQLite failed, trying fallback session.", dbError);
-        }
 
-        if ((!user || user.role !== "driver" || !profile) && normalizedPhone) {
-          const fallback = getFallbackDriverSession(normalizedPhone);
-          if (fallback) {
-            user = fallback.user;
-            profile = fallback.profile;
+          if ((!user || user.role !== "driver" || !profile) && fallbackSession) {
+            user = fallbackSession.user;
+            profile = fallbackSession.profile;
           }
         }
 
@@ -183,18 +187,38 @@ export default function OTPVerificationScreen() {
         return;
       }
 
+      // Check if rider already exists to skip profile setup
+      try {
+        const normalizedPhone = normalizePhone(phone);
+        const existingUser = await getUserByOpenId(normalizedPhone);
+        if (existingUser && existingUser.role === "rider") {
+          setCurrentUser(existingUser as any);
+          setIsAuthenticated(true);
+          await persist();
+          router.replace("/(tabs)");
+          return;
+        }
+      } catch (dbError) {
+        console.warn("[auth] Failed to check for existing rider:", dbError);
+      }
+
       router.push({ pathname: "/profile-setup", params: { phone, role, otp } });
-    } catch (error) {
+    } catch (error: any) {
       console.warn("[auth] OTP verification failed:", error);
-      Alert.alert("Error", "Failed to verify OTP");
+      Alert.alert("Error", error.message || "Failed to verify OTP");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleResend = () => {
-    setSecondsRemaining(110);
-    Alert.alert("Code sent", `Verification code sent to ${phone}`);
+  const handleResend = async () => {
+    try {
+      await requestOtp(phone);
+      setSecondsRemaining(110);
+      Alert.alert("Code sent", `Verification code sent to ${phone}`);
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to resend code");
+    }
   };
 
   const handleOtpChange = (value: string) => {

@@ -4,9 +4,57 @@ import { getApiBaseUrl } from "@/constants/oauth";
 import * as Auth from "./auth";
 import { useAppStore } from "@/lib/store";
 
-type ApiResponse<T> = {
-  data?: T;
-  error?: string;
+const variantRole =
+  process.env.EXPO_PUBLIC_APP_VARIANT === "driver"
+    ? "driver"
+    : process.env.EXPO_PUBLIC_APP_VARIANT === "seeker"
+      ? "rider"
+      : null;
+const DEV_DRIVER_STORAGE_KEY = "devDriverUserId";
+
+const parseDriverUserIdFromUrl = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const value = params.get("driverUserId");
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? String(parsed) : null;
+  } catch {
+    return null;
+  }
+};
+
+const readPersistedDevDriverUserId = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(DEV_DRIVER_STORAGE_KEY);
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? String(parsed) : null;
+  } catch {
+    return null;
+  }
+};
+
+const resolveDevDriverUserId = (): string => {
+  if (typeof window !== "undefined") {
+    const fromUrl = parseDriverUserIdFromUrl();
+    if (fromUrl) {
+      try {
+        window.localStorage.setItem(DEV_DRIVER_STORAGE_KEY, fromUrl);
+      } catch {
+        // Ignore localStorage write failures.
+      }
+      return fromUrl;
+    }
+
+    const fromStorage = readPersistedDevDriverUserId();
+    if (fromStorage) {
+      return fromStorage;
+    }
+  }
+  return process.env.EXPO_PUBLIC_DEV_DRIVER_USER_ID || "2001001";
 };
 
 export async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -17,10 +65,27 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
 
   const tryAttachDevIdentityHeader = async () => {
     try {
+      // Respect explicitly provided identity headers (used by admin tooling).
+      if (headers["x-dev-user-id"] && headers["x-dev-user-role"]) {
+        return;
+      }
+
+      if (
+        Platform.OS === "web" &&
+        variantRole === "driver" &&
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+      ) {
+        // Local dual-app testing relies on pre-registered backend demo drivers.
+        headers["x-dev-user-id"] = resolveDevDriverUserId();
+        headers["x-dev-user-role"] = "driver";
+        return;
+      }
+
       const stateUser = useAppStore.getState().currentUser as { id?: number; role?: string } | null;
       if (stateUser?.id && stateUser?.role) {
         headers["x-dev-user-id"] = String(stateUser.id);
-        headers["x-dev-user-role"] = String(stateUser.role);
+        headers["x-dev-user-role"] = String(variantRole ?? stateUser.role);
         return;
       }
 
@@ -35,7 +100,10 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
       const user = JSON.parse(userRaw) as { id?: number; role?: string };
       if (user?.id && user?.role) {
         headers["x-dev-user-id"] = String(user.id);
-        headers["x-dev-user-role"] = String(user.role);
+        headers["x-dev-user-role"] = String(variantRole ?? user.role);
+      } else if (user?.id && variantRole) {
+        headers["x-dev-user-id"] = String(user.id);
+        headers["x-dev-user-role"] = variantRole;
       }
     } catch {
       // Ignore malformed local user cache.

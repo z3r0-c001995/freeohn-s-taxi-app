@@ -11,6 +11,7 @@ import { radii, shadows } from "@/constants/design-system";
 import { IS_DRIVER_APP } from "@/constants/app-variant";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { validatePhoneNumber } from "@/lib/ride-utils";
+import { requestOtp } from "@/lib/ride-hailing-api";
 
 function DriverPhoneEntry() {
   const router = useRouter();
@@ -31,8 +32,10 @@ function DriverPhoneEntry() {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await requestOtp(phone);
       router.push({ pathname: "/otp-verification", params: { phone, role: "driver" } });
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to send verification code. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -118,8 +121,10 @@ function SeekerPhoneEntry() {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await requestOtp(fullPhone);
       router.push({ pathname: "/otp-verification", params: { phone: fullPhone, role: "rider" } });
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to send verification code. Please try again.");
     } finally {
       setIsLoading(false);
     }

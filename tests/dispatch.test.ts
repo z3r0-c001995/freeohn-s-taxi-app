@@ -42,7 +42,7 @@ describe("Dispatch service", () => {
       plateNumber: "KDA123A",
       verified: true,
     });
-    tripService.verifyDriver(profile.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, profile.driverId, true);
     tripService.setDriverStatus(driverUser, {
       isOnline: true,
       lat: -1.2868,
@@ -95,8 +95,8 @@ describe("Dispatch service", () => {
       plateNumber: "FRH001",
       verified: true,
     });
-    tripService.verifyDriver(staleProfile.driverId, true);
-    tripService.verifyDriver(freshProfile.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, staleProfile.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, freshProfile.driverId, true);
 
     tripService.setDriverStatus(staleDriverUser, {
       isOnline: true,

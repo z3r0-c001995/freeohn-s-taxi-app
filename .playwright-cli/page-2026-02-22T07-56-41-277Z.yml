@@ -1,0 +1,52 @@
+- generic [ref=e30]:
+  - generic [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e34] [cursor=pointer]: 
+      - generic [ref=e36]: "Nearby drivers: 1"
+    - generic [ref=e37]: Request Ride
+    - generic [ref=e38]: Search addresses or tap the map to set pickup and destination.
+  - generic [ref=e41]:
+    - generic:
+      - region "Map" [ref=e42]
+      - button "Map marker" [ref=e43] [cursor=pointer]
+      - button "Map marker" [ref=e44] [cursor=pointer]
+      - button "Map marker" [ref=e45] [cursor=pointer]
+    - generic:
+      - generic [ref=e46]:
+        - button "Zoom in" [disabled] [ref=e47]
+        - button "Zoom out" [ref=e49] [cursor=pointer]
+        - button "Drag to rotate map, click to reset north" [ref=e51]
+      - group [ref=e53]:
+        - generic [ref=e54]: © OpenStreetMap contributors © CARTO
+  - generic [ref=e56]:
+    - generic [ref=e57]: Pickup
+    - generic [ref=e58]:
+      - textbox "Search pickup address" [ref=e59]: High Commission of the Republic of Tanzania, 1, Pandit Nehru Road, Longacres, Lusaka, Lusaka District, Lusaka Province, Zambia
+      - generic [ref=e60]: Search unavailable. Please try again.
+    - generic [ref=e61]: "Selected: High Commission of the Republic of Tanzania, 1, Pandit Nehru Road, Longacres, Lusaka, Lusaka District, Lusaka Province, Zambia"
+    - generic [ref=e62]: Destination
+    - generic [ref=e63]:
+      - textbox "Search destination address" [active] [ref=e64]: east
+      - generic [ref=e68] [cursor=pointer]:
+        - generic [ref=e69]: East Park Mall
+        - generic [ref=e70]: Lusaka, Lusaka, Zambia
+      - generic [ref=e71]: Searching...
+    - generic [ref=e72]: "Selected: east"
+    - generic [ref=e73]:
+      - generic [ref=e74] [cursor=pointer]:
+        - generic [ref=e75]: Standard
+        - generic [ref=e76]: Affordable everyday ride
+      - generic [ref=e77] [cursor=pointer]:
+        - generic [ref=e78]: Premium
+        - generic [ref=e79]: More comfort and space
+    - generic [ref=e80]:
+      - generic [ref=e81]:
+        - generic [ref=e82]: Estimated fare
+        - generic [ref=e83]: $0.00
+      - generic [ref=e84]:
+        - generic [ref=e85]: Distance
+        - generic [ref=e86]: "--"
+        - generic [ref=e87]: ETA --
+    - generic:
+      - generic [ref=e88]: 
+      - generic [ref=e89]: Confirm Ride

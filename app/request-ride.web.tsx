@@ -13,7 +13,6 @@ import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { trpc } from "@/lib/trpc";
 import { useAppStore } from "@/lib/store";
-import { createRide } from "@/lib/db-service";
 import { calculateDistance } from "@/lib/ride-utils";
 import { createTrip, getNearbyDrivers } from "@/lib/ride-hailing-api";
 import { calculateFare } from "@/shared/constants/fare";
@@ -25,7 +24,7 @@ export default function RequestRideScreenWeb() {
   const router = useRouter();
   const brand = useBrandTheme();
   const trpcUtils = trpc.useUtils();
-  const { currentUser, currentLocation, setActiveRide } = useAppStore();
+  const { currentUser, currentLocation } = useAppStore();
 
   const [pickupLocation, setPickupLocation] = useState<LatLng | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<LatLng | null>(null);
@@ -200,41 +199,18 @@ export default function RequestRideScreenWeb() {
       const idempotencyKey = `trip_${Date.now()}_${currentUser.id}`;
       const finalPickupAddress = pickupAddress.trim() || (await resolveAddress(pickupLocation));
       const finalDropoffAddress = dropoffAddress.trim() || (await resolveAddress(dropoffLocation));
-
-      try {
-        const trip = await createTrip({
-          pickup: pickupLocation,
-          dropoff: dropoffLocation,
-          pickupAddress: finalPickupAddress,
-          dropoffAddress: finalDropoffAddress,
-          rideType,
-          distanceMeters,
-          durationSeconds,
-          paymentMethod: "CASH",
-          idempotencyKey,
-        });
-        router.replace(`/trip/${trip.id}` as never);
-        return;
-      } catch (apiError) {
-        console.warn("[request-ride.web] remote createTrip failed, using local fallback", apiError);
-      }
-
-      const ride = await createRide(
-        currentUser.id.toString(),
-        pickupLocation.lat,
-        pickupLocation.lng,
-        dropoffLocation.lat,
-        dropoffLocation.lng,
-        finalPickupAddress,
-        finalDropoffAddress,
+      const trip = await createTrip({
+        pickup: pickupLocation,
+        dropoff: dropoffLocation,
+        pickupAddress: finalPickupAddress,
+        dropoffAddress: finalDropoffAddress,
         rideType,
-        fare,
         distanceMeters,
         durationSeconds,
-      );
-
-      setActiveRide(ride);
-      router.replace(`/trip/${ride.id}` as never);
+        paymentMethod: "CASH",
+        idempotencyKey,
+      });
+      router.replace(`/trip/${trip.id}` as never);
     } catch (error) {
       console.error("[request-ride.web] Failed to request ride", error);
       Alert.alert("Error", error instanceof Error ? error.message : "Unable to request ride now.");
@@ -299,28 +275,32 @@ export default function RequestRideScreenWeb() {
             />
           </View>
 
-          <AppCard>
-            <View style={{ gap: 12 }}>
+          <AppCard style={{ overflow: "visible", zIndex: 100 }}>
+            <View style={{ gap: 12, overflow: "visible", zIndex: 100 }}>
               <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Pickup</Text>
-              <PlaceSearchInput
-                placeholder="Search pickup address"
-                onPlaceSelect={handlePickupSelect}
-                userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
-                value={pickupAddress}
-                onChangeText={handlePickupInputChange}
-              />
+              <View style={{ zIndex: 20 }}>
+                <PlaceSearchInput
+                  placeholder="Search pickup address"
+                  onPlaceSelect={handlePickupSelect}
+                  userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+                  value={pickupAddress}
+                  onChangeText={handlePickupInputChange}
+                />
+              </View>
               <Text style={{ fontSize: 12, color: brand.textMuted }}>
                 {pickupAddress ? `Selected: ${pickupAddress}` : "Tap map or search pickup address."}
               </Text>
 
               <Text style={{ marginTop: 2, fontSize: 14, fontWeight: "700", color: brand.text }}>Destination</Text>
-              <PlaceSearchInput
-                placeholder="Search destination address"
-                onPlaceSelect={handleDropoffSelect}
-                userLocation={pickupLocation || undefined}
-                value={dropoffAddress}
-                onChangeText={handleDropoffInputChange}
-              />
+              <View style={{ zIndex: 10 }}>
+                <PlaceSearchInput
+                  placeholder="Search destination address"
+                  onPlaceSelect={handleDropoffSelect}
+                  userLocation={pickupLocation || undefined}
+                  value={dropoffAddress}
+                  onChangeText={handleDropoffInputChange}
+                />
+              </View>
               <Text style={{ fontSize: 12, color: brand.textMuted }}>
                 {dropoffAddress ? `Selected: ${dropoffAddress}` : "Tap map or search destination address."}
               </Text>

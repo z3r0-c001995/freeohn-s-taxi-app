@@ -1,0 +1,36 @@
+- generic [ref=e159]:
+  - generic [ref=e160]:
+    - generic [ref=e161]:
+      - generic [ref=e163] [cursor=pointer]: 
+      - generic [ref=e165]: ONLINE
+    - generic [ref=e166]: Driver Dashboard
+    - generic [ref=e167]: Freeohn Driver
+    - generic [ref=e168]:
+      - generic [ref=e169]:
+        - generic [ref=e170]: Today
+        - generic [ref=e171]: $0.00
+      - generic [ref=e172]:
+        - generic [ref=e173]: Requests
+        - generic [ref=e174]: "0"
+    - generic [ref=e176] [cursor=pointer]:
+      - generic [ref=e177]: 
+      - generic [ref=e178]: Go Offline
+  - generic [ref=e179]:
+    - generic [ref=e181]:
+      - region "Map" [ref=e182]
+      - generic:
+        - generic [ref=e183]:
+          - button "Zoom in" [ref=e184] [cursor=pointer]
+          - button "Zoom out" [ref=e186] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e188]
+        - group [ref=e190]:
+          - generic [ref=e191]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e192]:
+      - generic [ref=e193]: "Location: -15.416200, 28.311500"
+      - generic [ref=e194]: "Tracking: inactive"
+      - generic [ref=e195]: Sun, Feb 22, 2026 • 01:51 AM
+  - generic [ref=e205]: No pending ride requests.
+  - generic [ref=e198]:
+    - generic [ref=e199]: Earnings & Operations
+    - generic [ref=e200]: View daily totals, weekly trend, and trip-by-trip earnings breakdown.
+    - generic [ref=e203] [cursor=pointer]: Open Earnings

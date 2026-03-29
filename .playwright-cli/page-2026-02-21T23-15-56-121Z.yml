@@ -1,0 +1,15 @@
+- generic [ref=e89]:
+  - generic [ref=e91] [cursor=pointer]: 
+  - generic [ref=e92]:
+    - generic [ref=e94]: 
+    - generic [ref=e95]: Verification Code
+    - generic [ref=e96]: Please enter the code sent to 260 971 234567
+    - generic [ref=e99]: 01:50
+  - generic [ref=e100]:
+    - generic [ref=e101]:
+      - generic [ref=e102]: 6-digit code
+      - textbox "123456" [active] [ref=e103]
+    - generic [ref=e112]: Verify Code
+    - generic [ref=e113]:
+      - generic [ref=e114]: Didn't receive code?
+      - generic [ref=e116] [cursor=pointer]: Resend

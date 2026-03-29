@@ -19,7 +19,7 @@ describe("Driver location anti-spoof guard", () => {
       plateNumber: "SPF120",
       verified: true,
     });
-    tripService.verifyDriver(profile.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, profile.driverId, true);
 
     tripService.setDriverStatus(driverUser, {
       isOnline: true,

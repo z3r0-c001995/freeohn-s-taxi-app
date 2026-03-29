@@ -59,7 +59,7 @@ describe("Driver onboarding and access control", () => {
       }),
     ).toThrow("Driver must be verified before going online");
 
-    tripService.verifyDriver(profile.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, profile.driverId, true);
     const status = tripService.setDriverStatus(driverUser, {
       isOnline: true,
       lat: -1.2868,

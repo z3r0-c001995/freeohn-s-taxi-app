@@ -33,12 +33,12 @@ export function AppCard({ children, tone = "default", elevated = true, padded = 
       {...rest}
       style={[
         {
-          borderRadius: radii.lg,
-          borderWidth: 1,
-          padding: padded ? 16 : 0,
+          borderRadius: radii.xl, // Premium rounded corners
+          borderWidth: 0.5, // Thinner border
+          padding: padded ? 18 : 0,
         },
         toneStyle,
-        elevated ? shadows.sm : null,
+        elevated ? shadows.md : null,
         style,
       ]}
     >

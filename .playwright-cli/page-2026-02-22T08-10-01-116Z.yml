@@ -1,0 +1,48 @@
+- generic [ref=e30]:
+  - generic [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e34] [cursor=pointer]: 
+      - generic [ref=e36]: "Realtime: WebSocket"
+    - generic [ref=e37]: Trip Status
+    - generic [ref=e38]: "Trip ID: trip_6e110be5607046f690bb1bfd1378b612"
+    - generic [ref=e39]: "State: MATCHING"
+  - generic [ref=e40]:
+    - generic [ref=e41]: Looking for nearby drivers...
+    - generic [ref=e42]: Stay on this screen while we dispatch your request.
+    - generic [ref=e43]:
+      - generic [ref=e46]: 
+      - generic [ref=e47]: 03:57
+      - generic [ref=e48]: matching timer
+    - generic [ref=e51] [cursor=pointer]: Cancel Request
+  - generic [ref=e52]:
+    - generic [ref=e54]:
+      - generic:
+        - region "Map" [ref=e55]
+        - button "Map marker" [ref=e56] [cursor=pointer]
+        - button "Map marker" [ref=e57] [cursor=pointer]
+        - button "Map marker" [ref=e58] [cursor=pointer]
+      - generic:
+        - generic [ref=e59]:
+          - button "Zoom in" [ref=e60] [cursor=pointer]
+          - button "Zoom out" [ref=e62] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e64]
+        - group [ref=e66]:
+          - generic [ref=e67]: © OpenStreetMap contributors © CARTO
+    - generic [ref=e69]: "Driver GPS: Waiting for live updates"
+  - generic [ref=e70]:
+    - generic [ref=e71]: Pickup
+    - generic [ref=e72]: "-15.420621, 28.311552"
+    - generic [ref=e73]: Dropoff
+    - generic [ref=e74]: East Park Mall, Lusaka, Lusaka, Zambia
+    - generic [ref=e75]:
+      - generic [ref=e76]:
+        - generic [ref=e77]: Total fare
+        - generic [ref=e78]: USD 8.30
+      - generic [ref=e80]: MATCHING
+  - generic [ref=e81]:
+    - generic [ref=e82]:
+      - generic [ref=e83]: Safety Center
+      - generic [ref=e85] [cursor=pointer]: 
+    - generic [ref=e86]: Share route with trusted contacts or trigger emergency support.
+    - generic [ref=e89] [cursor=pointer]: Share Live Route
+  - generic [ref=e91] [cursor=pointer]: Cancel Trip

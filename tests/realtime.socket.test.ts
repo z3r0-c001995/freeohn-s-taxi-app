@@ -63,7 +63,7 @@ describe("Realtime socket gateway", () => {
       plateNumber: "ALX120",
       verified: true,
     });
-    tripService.verifyDriver(profile.driverId, true);
+    tripService.verifyDriver({ id: 1, role: "admin" }, profile.driverId, true);
     tripService.setDriverStatus(driverUser, {
       isOnline: true,
       lat: -15.416,

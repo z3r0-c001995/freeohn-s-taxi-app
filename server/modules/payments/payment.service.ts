@@ -1,5 +1,5 @@
 import type { PaymentMethod } from "../../../shared/ride-hailing";
-
+import { lencoApiService } from "./lenco.service";
 export type PaymentCaptureInput = {
   tripId: string;
   riderId: number;
@@ -28,9 +28,39 @@ class CashPaymentHandler implements PaymentHandler {
   }
 }
 
+class MobileMoneyPaymentHandler implements PaymentHandler {
+  async capture(input: PaymentCaptureInput): Promise<PaymentCaptureResult> {
+    return {
+      status: "PENDING",
+      method: "MOBILE_MONEY",
+      referenceId: `momo_${input.tripId}`,
+    };
+  }
+}
+
+class LencopayPaymentHandler implements PaymentHandler {
+  async capture(input: PaymentCaptureInput): Promise<PaymentCaptureResult> {
+    const response = await lencoApiService.createPaymentLink({
+      reference: `trip_${input.tripId}`,
+      amount: input.amount,
+      currency: input.currency,
+      title: "Ride Payment",
+      description: `Payment for trip ${input.tripId}`,
+    });
+
+    return {
+      status: "PENDING",
+      method: "LENCOPAY",
+      referenceId: response.data.url, // Store the payment checkout link
+    };
+  }
+}
+
 export class PaymentService {
   private readonly handlers: Record<PaymentMethod, PaymentHandler> = {
     CASH: new CashPaymentHandler(),
+    MOBILE_MONEY: new MobileMoneyPaymentHandler(),
+    LENCOPAY: new LencopayPaymentHandler(),
   };
 
   async capture(method: PaymentMethod, input: PaymentCaptureInput): Promise<PaymentCaptureResult> {

@@ -5,8 +5,11 @@ export interface RideMapProps {
   pickupLocation?: LatLng;
   dropoffLocation?: LatLng;
   routePolyline?: string;
+  routeColor?: string;
   nearbyDrivers?: NearbyDriverMarker[];
+  hotspots?: { lat: number; lng: number; radius?: number; color?: string }[];
   onPickupSelect?: (location: LatLng) => void;
   onDropoffSelect?: (location: LatLng) => void;
   style?: any;
+  mapRef?: any;
 }

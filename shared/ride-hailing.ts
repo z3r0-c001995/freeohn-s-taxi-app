@@ -28,7 +28,7 @@ export type CancelReason = (typeof cancelReasonValues)[number];
 export const userRoleValues = ["rider", "driver", "admin"] as const;
 export type UserRole = (typeof userRoleValues)[number];
 
-export const paymentMethodValues = ["CASH"] as const;
+export const paymentMethodValues = ["CASH", "MOBILE_MONEY", "LENCOPAY"] as const;
 export type PaymentMethod = (typeof paymentMethodValues)[number];
 
 export const locationPointSchema = z.object({
@@ -144,6 +144,58 @@ export type DriverVehicle = {
   plateNumber: string;
 };
 
+export type DriverPersonalInfo = {
+  fullName: string;
+  phoneNumber: string;
+  nrcNumber: string;
+  homeAddress: string;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  payoutMethod?: "MOBILE_MONEY" | "BANK" | null;
+  payoutAccountNumber?: string | null;
+};
+
+export type DriverCompliance = {
+  driversLicenseNumber: string;
+  vehicleRegistrationNumber: string;
+  hasDriversLicense: boolean;
+  hasVehicleRegistrationDocument: boolean;
+  insured: boolean;
+  roadTaxCleared: boolean;
+  fitnessTestPassed: boolean;
+};
+
+export type DriverCommercialProfile = {
+  ridesPurchased: number;
+  ridesCompleted: number;
+  notes: string | null;
+};
+
+export type DriverDocumentPlaceholders = {
+  driversLicenseDocumentRef: string;
+  vehicleRegistrationDocumentRef: string;
+  insuranceDocumentRef: string;
+  roadTaxDocumentRef: string;
+  fitnessCertificateDocumentRef: string;
+};
+
+export type DriverComplianceAudit = {
+  driversLicenseCheckedAt: string | null;
+  vehicleRegistrationCheckedAt: string | null;
+  insuranceCheckedAt: string | null;
+  roadTaxCheckedAt: string | null;
+  fitnessCheckedAt: string | null;
+};
+
+export type DriverProfileAudit = {
+  createdAt: string;
+  updatedAt: string;
+  createdByAdminId: number | null;
+  updatedByAdminId: number | null;
+  verificationReviewedAt: string | null;
+  compliance: DriverComplianceAudit;
+};
+
 export type DriverProfileRecord = {
   driverId: string;
   userId: number;
@@ -151,6 +203,11 @@ export type DriverProfileRecord = {
   rating: number;
   totalTrips: number;
   vehicle: DriverVehicle;
+  personalInfo: DriverPersonalInfo;
+  compliance: DriverCompliance;
+  commercial: DriverCommercialProfile;
+  documents: DriverDocumentPlaceholders;
+  audit: DriverProfileAudit;
 };
 
 export type DriverStatusRecord = {

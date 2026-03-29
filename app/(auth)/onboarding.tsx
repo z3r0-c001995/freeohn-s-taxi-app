@@ -138,15 +138,6 @@ function SeekerOnboarding() {
                   }}
                 />
               </View>
-              <View style={{ marginTop: 10 }}>
-                <AppButton
-                  label="Driver Portal"
-                  variant="outline"
-                  onPress={() => {
-                    router.push({ pathname: "/phone-entry", params: { role: "driver" } });
-                  }}
-                />
-              </View>
             </AppCard>
           </View>
         </View>

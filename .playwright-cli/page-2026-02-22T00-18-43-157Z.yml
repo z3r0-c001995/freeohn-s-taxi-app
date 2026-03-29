@@ -1,0 +1,11 @@
+- generic [ref=e65]:
+  - generic [ref=e67] [cursor=pointer]: 
+  - generic [ref=e68]:
+    - generic [ref=e69]: Driver Login
+    - generic [ref=e70]: Enter your company-approved number to access dispatch.
+  - generic [ref=e71]:
+    - generic [ref=e72]:
+      - generic [ref=e73]: Phone Number
+      - textbox "+260 97 123 4567" [active] [ref=e74]
+    - generic [ref=e77] [cursor=pointer]: Send Verification Code
+    - generic [ref=e78]: Drivers are registered by company owner/admin. Self signup is disabled.
