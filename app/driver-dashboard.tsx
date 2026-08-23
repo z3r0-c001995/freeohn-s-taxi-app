@@ -229,6 +229,28 @@ export default function DriverDashboardScreen() {
     }
   };
 
+  // Relocate Driver Coordinates (e.g. for testing or moving to a high-demand hub)
+  const handleSetDriverLocation = async (coords: { latitude: number; longitude: number }, name: string) => {
+    try {
+      setCurrentLocation(coords);
+      setCurrentLocationAddress(name);
+      await updateDriverLocation({
+        lat: coords.latitude,
+        lng: coords.longitude,
+      });
+      if (isOnline) {
+        await updateDriverStatus({
+          isOnline: true,
+          lat: coords.latitude,
+          lng: coords.longitude,
+        });
+      }
+      await refreshDashboard();
+    } catch (err) {
+      console.warn("Failed to set driver location:", err);
+    }
+  };
+
   // Trip Actions
   const handleAcceptRequest = async (offerId: string) => {
     try {
@@ -370,11 +392,40 @@ export default function DriverDashboardScreen() {
                 initialStyle="streets"
                 style={{ height: 320 }}
               />
-              <View style={[styles.locationFooter, { backgroundColor: brand.surface }]}>
-                <Ionicons name="navigate" size={14} color={brand.primary} />
-                <Text style={[styles.locationFooterText, { color: brand.textMuted }]} numberOfLines={1}>
-                  {currentLocationAddress}
-                </Text>
+              <View style={[styles.locationFooter, { backgroundColor: brand.surface, flexDirection: "column", alignItems: "stretch", gap: 8 }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="navigate" size={14} color={brand.primary} />
+                  <Text style={[styles.locationFooterText, { color: brand.textMuted }]} numberOfLines={1}>
+                    {currentLocationAddress}
+                  </Text>
+                </View>
+
+                {/* Quick Relocation Hub Presets for Testing */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, paddingTop: 4 }}>
+                  <TouchableOpacity
+                    onPress={() => handleSetDriverLocation({ latitude: -15.3897, longitude: 28.3237 }, "East Park Mall, Lusaka")}
+                    style={[styles.relocatePill, { backgroundColor: brand.primary + "15", borderColor: brand.primary + "40" }]}
+                  >
+                    <Ionicons name="location" size={12} color={brand.primary} />
+                    <Text style={[styles.relocatePillText, { color: brand.primary }]}>East Park (Lusaka)</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => handleSetDriverLocation({ latitude: -15.4162, longitude: 28.3115 }, "Lusaka Central Hub")}
+                    style={[styles.relocatePill, { backgroundColor: brand.primary + "15", borderColor: brand.primary + "40" }]}
+                  >
+                    <Ionicons name="business" size={12} color={brand.primary} />
+                    <Text style={[styles.relocatePillText, { color: brand.primary }]}>Lusaka CBD</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => handleSetDriverLocation({ latitude: -15.3305, longitude: 28.4529 }, "KK Int'l Airport, Lusaka")}
+                    style={[styles.relocatePill, { backgroundColor: brand.primary + "15", borderColor: brand.primary + "40" }]}
+                  >
+                    <Ionicons name="airplane" size={12} color={brand.primary} />
+                    <Text style={[styles.relocatePillText, { color: brand.primary }]}>Airport</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
@@ -905,6 +956,19 @@ const styles = StyleSheet.create({
   },
   radiusPillText: {
     fontSize: 12,
+  },
+  relocatePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  relocatePillText: {
+    fontSize: 11,
+    fontWeight: "700",
   },
   incomingCard: {
     borderRadius: 18,

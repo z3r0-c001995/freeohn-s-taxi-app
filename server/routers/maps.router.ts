@@ -465,13 +465,15 @@ async function fetchSerpApiPlaces(query: string, location?: { lat: number; lng: 
     }> = [];
 
     // 1. Check single place match (place_results)
+    const prCoords = response.data?.place_results?.gps_coordinates;
     if (
-      response.data?.place_results?.gps_coordinates?.latitude &&
-      response.data?.place_results?.gps_coordinates?.longitude
+      prCoords &&
+      typeof prCoords.latitude === "number" &&
+      typeof prCoords.longitude === "number"
     ) {
-      const pr = response.data.place_results;
-      const lat = pr.gps_coordinates.latitude;
-      const lng = pr.gps_coordinates.longitude;
+      const pr = response.data!.place_results!;
+      const lat = prCoords.latitude;
+      const lng = prCoords.longitude;
       const mainText = pr.title?.trim() || query;
       const secondaryText = pr.address?.trim() || "Zambia";
       const fullAddress = `${mainText}${pr.address ? `, ${pr.address}` : ", Zambia"}`;
@@ -523,13 +525,15 @@ async function fetchSerpApiPlaces(query: string, location?: { lat: number; lng: 
     }
 
     // 3. Fallback to local_map coordinates
+    const lmCoords = response.data?.local_map?.gps_coordinates;
     if (
       results.length === 0 &&
-      response.data?.local_map?.gps_coordinates?.latitude &&
-      response.data?.local_map?.gps_coordinates?.longitude
+      lmCoords &&
+      typeof lmCoords.latitude === "number" &&
+      typeof lmCoords.longitude === "number"
     ) {
-      const lat = response.data.local_map.gps_coordinates.latitude;
-      const lng = response.data.local_map.gps_coordinates.longitude;
+      const lat = lmCoords.latitude;
+      const lng = lmCoords.longitude;
       results.push({
         place_id: `serp_map_${lat}_${lng}`,
         description: `${query}, Zambia`,

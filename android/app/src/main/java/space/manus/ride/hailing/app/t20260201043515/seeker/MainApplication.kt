@@ -1,4 +1,4 @@
-package space.manus.ride.hailing.app.t20260201043515.driver
+package space.manus.ride.hailing.app.t20260201043515.seeker
 
 import android.app.Application
 import android.content.res.Configuration
