@@ -61,16 +61,49 @@ function normalizePhone(phone: string) {
 }
 
 function getFallbackDriverSession(phone: string) {
-  const record = DEMO_REGISTERED_DRIVERS[normalizePhone(phone)];
-  if (!record) return null;
-
+  const norm = normalizePhone(phone);
+  const record = DEMO_REGISTERED_DRIVERS[norm];
   const now = new Date();
+
+  if (record) {
+    return {
+      user: {
+        id: record.user.id,
+        openId: record.user.openId,
+        name: record.user.name,
+        email: record.user.email,
+        loginMethod: "phone",
+        role: "driver" as const,
+        createdAt: now,
+        updatedAt: now,
+        lastSignedIn: now,
+      },
+      profile: {
+        id: record.profile.id,
+        userId: record.user.id,
+        vehicleMake: record.profile.vehicleMake,
+        vehicleModel: record.profile.vehicleModel,
+        plateNumber: record.profile.plateNumber,
+        licenseNumber: record.profile.licenseNumber,
+        isOnline: false,
+        currentLat: record.profile.currentLat,
+        currentLng: record.profile.currentLng,
+        totalEarnings: 0,
+        totalTrips: 156,
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
+  }
+
+  // Testing fallback: allow any phone number to login as a driver
+  const driverId = norm.length > 0 ? Math.abs(parseInt(norm.slice(-7), 10) || 2001002) : 2001002;
   return {
     user: {
-      id: record.user.id,
-      openId: record.user.openId,
-      name: record.user.name,
-      email: record.user.email,
+      id: driverId,
+      openId: norm || "260971000002",
+      name: "Freeohn Driver",
+      email: `driver_${driverId}@freeohn.app`,
       loginMethod: "phone",
       role: "driver" as const,
       createdAt: now,
@@ -78,17 +111,17 @@ function getFallbackDriverSession(phone: string) {
       lastSignedIn: now,
     },
     profile: {
-      id: record.profile.id,
-      userId: record.user.id,
-      vehicleMake: record.profile.vehicleMake,
-      vehicleModel: record.profile.vehicleModel,
-      plateNumber: record.profile.plateNumber,
-      licenseNumber: record.profile.licenseNumber,
+      id: driverId + 1000000,
+      userId: driverId,
+      vehicleMake: "Toyota",
+      vehicleModel: "Corolla",
+      plateNumber: "ABC 1234 ZM",
+      licenseNumber: `DRV-${driverId}`,
       isOnline: false,
-      currentLat: record.profile.currentLat,
-      currentLng: record.profile.currentLng,
+      currentLat: "-15.3897",
+      currentLng: "28.3237",
       totalEarnings: 0,
-      totalTrips: 156,
+      totalTrips: 42,
       createdAt: now,
       updatedAt: now,
     },

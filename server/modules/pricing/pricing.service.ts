@@ -17,7 +17,7 @@ export class PricingService {
     const total = Math.max(subtotal * surgeMultiplier, FARE_CONFIG.MINIMUM_FARE);
 
     return {
-      currency: "USD",
+      currency: "ZMW",
       baseFare: round2(baseFare),
       distanceFare: round2(distanceFare),
       timeFare: round2(timeFare),

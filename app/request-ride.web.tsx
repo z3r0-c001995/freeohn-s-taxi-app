@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -20,11 +20,22 @@ import type { LatLng, NearbyDriverMarker, PlaceDetails } from "@/lib/maps/map-ty
 
 type RideType = "standard" | "premium";
 
+const QUICK_CITIES = [
+  { label: "Lusaka (CBD)", lat: -15.4164, lng: 28.2847, address: "Cairo Road (Lusaka CBD), Lusaka City Centre" },
+  { label: "East Park Mall", lat: -15.3897, lng: 28.3237, address: "East Park Mall, Great East Road, Lusaka" },
+  { label: "Mansa Central", lat: -11.197, lng: 28.891, address: "Mansa Central, Luapula Province, Zambia" },
+  { label: "Kitwe (Mukuba)", lat: -12.8024, lng: 28.2132, address: "Mukuba Mall, Kitwe, Copperbelt Province" },
+  { label: "Ndola (Jacaranda)", lat: -12.9691, lng: 28.6366, address: "Jacaranda Mall, Ndola, Copperbelt Province" },
+  { label: "Solwezi Central", lat: -12.1738, lng: 26.3908, address: "Solwezi Town Centre, North-Western Province" },
+];
+
 export default function RequestRideScreenWeb() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const brand = useBrandTheme();
   const trpcUtils = trpc.useUtils();
   const { currentUser, currentLocation } = useAppStore();
+  const isInitializedRef = useRef(false);
 
   const [pickupLocation, setPickupLocation] = useState<LatLng | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<LatLng | null>(null);
@@ -53,24 +64,59 @@ export default function RequestRideScreenWeb() {
   const resolveAddress = async (location: LatLng) => {
     try {
       const response = await trpcUtils.maps.reverseGeocode.fetch(location);
-      return response.address || "Selected location";
+      return response.address || `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
     } catch {
-      return "Selected location";
+      return `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
     }
   };
 
+  // One-time initialization on mount from params or GPS
   useEffect(() => {
-    if (!currentLocation || pickupLocation) return;
+    if (isInitializedRef.current) return;
 
-    const seedPickup = async () => {
-      const location = { lat: currentLocation.latitude, lng: currentLocation.longitude };
-      setPickupLocation(location);
-      setPickupAddress(await resolveAddress(location));
+    const init = async () => {
+      // 1. Destination from params
+      if (params.dest && params.destLat && params.destLng) {
+        const destLat = parseFloat(params.destLat as string);
+        const destLng = parseFloat(params.destLng as string);
+        if (!isNaN(destLat) && !isNaN(destLng)) {
+          setDropoffLocation({ lat: destLat, lng: destLng });
+          setDropoffAddress(params.dest as string);
+        }
+      }
+
+      // 2. Pickup from params
+      if (params.pickup && params.pickupLat && params.pickupLng) {
+        const pLat = parseFloat(params.pickupLat as string);
+        const pLng = parseFloat(params.pickupLng as string);
+        if (!isNaN(pLat) && !isNaN(pLng)) {
+          setPickupLocation({ lat: pLat, lng: pLng });
+          setPickupAddress(params.pickup as string);
+          isInitializedRef.current = true;
+          return;
+        }
+      }
+
+      // 3. Pickup from currentLocation (GPS) if available
+      if (currentLocation) {
+        const location = { lat: currentLocation.latitude, lng: currentLocation.longitude };
+        setPickupLocation(location);
+        const addr = await resolveAddress(location);
+        setPickupAddress(addr);
+      } else {
+        // Default to Lusaka CBD if GPS is uninitialized
+        const defaultLoc = { lat: -15.4164, lng: 28.2847 };
+        setPickupLocation(defaultLoc);
+        setPickupAddress("Cairo Road (Lusaka CBD), Lusaka City Centre");
+      }
+
+      isInitializedRef.current = true;
     };
 
-    void seedPickup();
-  }, [currentLocation, pickupLocation]);
+    void init();
+  }, [currentLocation, params]);
 
+  // Calculate Route & Fare
   useEffect(() => {
     if (!pickupLocation || !dropoffLocation) {
       setDistanceKm(0);
@@ -103,6 +149,7 @@ export default function RequestRideScreenWeb() {
     setRoutePolyline(undefined);
   }, [dropoffLocation, pickupLocation, rideType, routeData]);
 
+  // Fetch Nearby Drivers
   useEffect(() => {
     if (!pickupLocation) {
       setNearbyCount(0);
@@ -116,7 +163,7 @@ export default function RequestRideScreenWeb() {
       try {
         const response = await getNearbyDrivers({
           pickup: pickupLocation,
-          radiusKm: 6,
+          radiusKm: 8,
           limit: 20,
         });
         if (!isCancelled) {
@@ -166,29 +213,32 @@ export default function RequestRideScreenWeb() {
     setDropoffAddress(place.formatted_address);
   };
 
-  const handlePickupInputChange = (text: string) => {
-    setPickupAddress(text);
-    setPickupLocation(null);
-  };
-
-  const handleDropoffInputChange = (text: string) => {
-    setDropoffAddress(text);
-    setDropoffLocation(null);
-  };
-
   const handlePickupMapSelect = async (location: LatLng) => {
     setPickupLocation(location);
-    setPickupAddress(await resolveAddress(location));
+    const addr = await resolveAddress(location);
+    setPickupAddress(addr);
   };
 
   const handleDropoffMapSelect = async (location: LatLng) => {
     setDropoffLocation(location);
-    setDropoffAddress(await resolveAddress(location));
+    const addr = await resolveAddress(location);
+    setDropoffAddress(addr);
+  };
+
+  const handleUseGPSLocation = async () => {
+    if (!currentLocation) {
+      Alert.alert("GPS Inactive", "Could not detect GPS coordinates. Please select your pickup address using search.");
+      return;
+    }
+    const loc = { lat: currentLocation.latitude, lng: currentLocation.longitude };
+    setPickupLocation(loc);
+    const addr = await resolveAddress(loc);
+    setPickupAddress(addr);
   };
 
   const handleRequestRide = async () => {
     if (!currentUser || !pickupLocation || !dropoffLocation) {
-      Alert.alert("Validation", "Select both pickup and destination using search or map.");
+      Alert.alert("Validation", "Please select both pickup and destination using the search or by tapping on the map.");
       return;
     }
 
@@ -226,8 +276,9 @@ export default function RequestRideScreenWeb() {
 
   return (
     <ScreenContainer className="bg-background" containerClassName="bg-background">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View style={{ gap: 16, paddingBottom: 20 }}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: 16, paddingHorizontal: 16, paddingTop: 16 }}>
+          {/* Header */}
           <View
             style={{
               borderRadius: radii.xl,
@@ -245,133 +296,204 @@ export default function RequestRideScreenWeb() {
                   borderRadius: 999,
                   alignItems: "center",
                   justifyContent: "center",
-                  backgroundColor: "rgba(255,255,255,0.14)",
+                  backgroundColor: "rgba(255,255,255,0.16)",
                 }}
               >
                 <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
               </TouchableOpacity>
               <AppBadge label={`Nearby drivers: ${nearbyCount}`} tone="primary" />
             </View>
-            <Text style={{ marginTop: 16, fontSize: 28, fontWeight: "800", color: "#FFFFFF" }}>Request Ride</Text>
-            <Text style={{ marginTop: 6, fontSize: 14, color: "#CBD5E1" }}>
-              Search addresses or tap the map to set pickup and destination.
+            <Text style={{ marginTop: 14, fontSize: 28, fontWeight: "800", color: "#FFFFFF" }}>Book Your Ride</Text>
+            <Text style={{ marginTop: 4, fontSize: 13, color: "#CBD5E1" }}>
+              Type any pickup & destination or tap anywhere on the map to set pins.
             </Text>
           </View>
 
-          <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
+          {/* Quick Hub / City Chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
+            {QUICK_CITIES.map((city) => (
+              <TouchableOpacity
+                key={city.label}
+                onPress={() => {
+                  setPickupLocation({ lat: city.lat, lng: city.lng });
+                  setPickupAddress(city.address);
+                }}
+                style={{
+                  paddingVertical: 7,
+                  paddingHorizontal: 12,
+                  borderRadius: 20,
+                  backgroundColor: pickupLocation?.lat === city.lat && pickupLocation?.lng === city.lng ? brand.primary : brand.surface,
+                  borderWidth: 1,
+                  borderColor: brand.border,
+                  ...shadows.sm,
+                }}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "700",
+                    color: pickupLocation?.lat === city.lat && pickupLocation?.lng === city.lng ? "#FFFFFF" : brand.text,
+                  }}
+                >
+                  📍 {city.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Interactive Map View */}
+          <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border, ...shadows.md }}>
             <RideMap
-              userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+              userLocation={pickupLocation || (currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined)}
               pickupLocation={pickupLocation || undefined}
               dropoffLocation={dropoffLocation || undefined}
               routePolyline={routePolyline}
               nearbyDrivers={nearbyDrivers}
-              onPickupSelect={(location) => {
-                void handlePickupMapSelect(location);
-              }}
-              onDropoffSelect={(location) => {
-                void handleDropoffMapSelect(location);
-              }}
-              style={{ height: 360 }}
+              onPickupSelect={handlePickupMapSelect}
+              onDropoffSelect={handleDropoffMapSelect}
+              interactivePlaceSelection={true}
+              showControls={true}
+              initialStyle="streets"
+              style={{ height: 380 }}
             />
           </View>
 
+          {/* Search Inputs Card */}
           <AppCard style={{ overflow: "visible", zIndex: 100 }}>
-            <View style={{ gap: 12, overflow: "visible", zIndex: 100 }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: brand.text }}>Pickup</Text>
-              <View style={{ zIndex: 20 }}>
+            <View style={{ gap: 14, overflow: "visible", zIndex: 100 }}>
+              {/* Pickup Input */}
+              <View style={{ zIndex: 30 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "800", color: "#16A34A", textTransform: "uppercase" }}>
+                    🟢 Pickup Location
+                  </Text>
+                  {currentLocation && (
+                    <TouchableOpacity onPress={handleUseGPSLocation} style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                      <Ionicons name="locate" size={13} color="#2563EB" />
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#2563EB" }}>Use My GPS</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <PlaceSearchInput
-                  placeholder="Search pickup address"
+                  placeholder="Enter pickup address or choose a landmark"
                   onPlaceSelect={handlePickupSelect}
                   userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
                   value={pickupAddress}
-                  onChangeText={handlePickupInputChange}
+                  onChangeText={(text) => {
+                    setPickupAddress(text);
+                    if (!text) setPickupLocation(null);
+                  }}
+                  dotColor="#16A34A"
+                  icon="radio-button-on"
                 />
               </View>
-              <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                {pickupAddress ? `Selected: ${pickupAddress}` : "Tap map or search pickup address."}
-              </Text>
 
-              <Text style={{ marginTop: 2, fontSize: 14, fontWeight: "700", color: brand.text }}>Destination</Text>
-              <View style={{ zIndex: 10 }}>
+              {/* Dropoff Input */}
+              <View style={{ zIndex: 20 }}>
+                <Text style={{ fontSize: 13, fontWeight: "800", color: "#EA580C", marginBottom: 6, textTransform: "uppercase" }}>
+                  🟠 Destination
+                </Text>
                 <PlaceSearchInput
-                  placeholder="Search destination address"
+                  placeholder="Where to? (e.g. Manda Hill, East Park, Airport)"
                   onPlaceSelect={handleDropoffSelect}
                   userLocation={pickupLocation || undefined}
                   value={dropoffAddress}
-                  onChangeText={handleDropoffInputChange}
+                  onChangeText={(text) => {
+                    setDropoffAddress(text);
+                    if (!text) setDropoffLocation(null);
+                  }}
+                  dotColor="#EA580C"
+                  icon="location"
                 />
               </View>
-              <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                {dropoffAddress ? `Selected: ${dropoffAddress}` : "Tap map or search destination address."}
-              </Text>
+            </View>
+          </AppCard>
 
-              <View style={{ marginTop: 4, flexDirection: "row", gap: 10 }}>
-                <TouchableOpacity
-                  onPress={() => setRideType("standard")}
-                  style={{
-                    flex: 1,
-                    borderRadius: radii.md,
-                    borderWidth: 1,
-                    borderColor: rideType === "standard" ? brand.primary : brand.border,
-                    backgroundColor: rideType === "standard" ? brand.primarySoft : brand.surface,
-                    padding: 12,
-                  }}
-                >
-                  <Text style={{ fontWeight: "700", color: brand.text }}>Standard</Text>
-                  <Text style={{ marginTop: 4, fontSize: 12, color: brand.textMuted }}>Affordable everyday ride</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setRideType("premium")}
-                  style={{
-                    flex: 1,
-                    borderRadius: radii.md,
-                    borderWidth: 1,
-                    borderColor: rideType === "premium" ? brand.primary : brand.border,
-                    backgroundColor: rideType === "premium" ? brand.primarySoft : brand.surface,
-                    padding: 12,
-                  }}
-                >
-                  <Text style={{ fontWeight: "700", color: brand.text }}>Premium</Text>
-                  <Text style={{ marginTop: 4, fontSize: 12, color: brand.textMuted }}>More comfort and space</Text>
-                </TouchableOpacity>
+          {/* Vehicle Class Selection */}
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <TouchableOpacity
+              onPress={() => setRideType("standard")}
+              style={{
+                flex: 1,
+                padding: 16,
+                borderRadius: radii.xl,
+                backgroundColor: rideType === "standard" ? "#EFF6FF" : brand.surface,
+                borderWidth: 2,
+                borderColor: rideType === "standard" ? "#2563EB" : brand.border,
+                ...shadows.sm,
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Ionicons name="car" size={24} color={rideType === "standard" ? "#2563EB" : brand.textMuted} />
+                <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>
+                  {distanceKm > 0 ? `K${fare.toFixed(0)}` : "--"}
+                </Text>
               </View>
+              <Text style={{ marginTop: 10, fontSize: 16, fontWeight: "800", color: brand.text }}>Standard</Text>
+              <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>Everyday affordable ride</Text>
+            </TouchableOpacity>
 
-              <View
-                style={{
-                  marginTop: 4,
-                  borderRadius: radii.md,
-                  padding: 14,
-                  backgroundColor: brand.surfaceMuted,
-                  borderWidth: 1,
-                  borderColor: brand.border,
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                }}
-              >
+            <TouchableOpacity
+              onPress={() => setRideType("premium")}
+              style={{
+                flex: 1,
+                padding: 16,
+                borderRadius: radii.xl,
+                backgroundColor: rideType === "premium" ? "#FFF7ED" : brand.surface,
+                borderWidth: 2,
+                borderColor: rideType === "premium" ? "#EA580C" : brand.border,
+                ...shadows.sm,
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Ionicons name="car-sport" size={24} color={rideType === "premium" ? "#EA580C" : brand.textMuted} />
+                <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text }}>
+                  {distanceKm > 0 ? `K${(fare * 1.35).toFixed(0)}` : "--"}
+                </Text>
+              </View>
+              <Text style={{ marginTop: 10, fontSize: 16, fontWeight: "800", color: brand.text }}>Premium</Text>
+              <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>Spacious & top drivers</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Trip Summary Card */}
+          {distanceKm > 0 && (
+            <AppCard tone="primary">
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                 <View>
-                  <Text style={{ fontSize: 12, color: brand.textMuted }}>Estimated fare</Text>
-                  <Text style={{ marginTop: 2, fontSize: 26, fontWeight: "800", color: brand.text }}>
-                    ${fare.toFixed(2)}
+                  <Text style={{ fontSize: 12, color: brand.textMuted }}>ESTIMATED FARE</Text>
+                  <Text style={{ fontSize: 26, fontWeight: "900", color: brand.text }}>
+                    K{rideType === "premium" ? (fare * 1.35).toFixed(0) : fare.toFixed(0)}
                   </Text>
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
-                  <Text style={{ fontSize: 12, color: brand.textMuted }}>Distance</Text>
-                  <Text style={{ marginTop: 2, fontSize: 16, fontWeight: "700", color: brand.text }}>
-                    {distanceKm > 0 ? `${distanceKm.toFixed(1)} km` : "--"}
+                  <Text style={{ fontSize: 12, color: brand.textMuted }}>DISTANCE / ETA</Text>
+                  <Text style={{ fontSize: 16, fontWeight: "700", color: brand.text }}>
+                    {distanceKm.toFixed(1)} km • {etaLabel}
                   </Text>
-                  <Text style={{ marginTop: 4, fontSize: 12, color: brand.textMuted }}>ETA {etaLabel}</Text>
                 </View>
               </View>
+            </AppCard>
+          )}
 
-              <AppButton
-                label={isRequesting ? "Looking for Drivers..." : "Confirm Ride"}
-                loading={isRequesting}
-                disabled={!pickupLocation || !dropoffLocation}
-                onPress={handleRequestRide}
-                leftIcon={<Ionicons name="car-sport" size={16} color="#FFFFFF" />}
-              />
-            </View>
-          </AppCard>
+          {/* Confirm Ride Button */}
+          <AppButton
+            label={
+              isRequesting
+                ? "Connecting with nearby drivers..."
+                : !pickupLocation || !dropoffLocation
+                ? "Select Pickup & Destination"
+                : `Confirm ${rideType === "premium" ? "Premium" : "Standard"} Ride • K${rideType === "premium" ? (fare * 1.35).toFixed(0) : fare.toFixed(0)}`
+            }
+            loading={isRequesting}
+            disabled={!pickupLocation || !dropoffLocation || isRequesting}
+            onPress={() => {
+              void handleRequestRide();
+            }}
+          />
         </View>
       </ScrollView>
     </ScreenContainer>

@@ -48,6 +48,18 @@ function DropoffPin({ color }: { color: string }) {
   );
 }
 
+function SelectedPin() {
+  return (
+    <View style={styles.pinWrap}>
+      <View style={[styles.pinBubble, { backgroundColor: "#4F46E5" }]}>
+        <Ionicons name="pin" size={12} color="#FFFFFF" />
+        <Text style={styles.pinLabel}>Selected</Text>
+      </View>
+      <View style={[styles.pinTip, { borderTopColor: "#4F46E5" }]} />
+    </View>
+  );
+}
+
 function DriverPin({ color }: { color: string }) {
   return (
     <View style={[styles.driverMarker, { backgroundColor: "#1E293B", borderColor: color, shadowColor: color }]}>
@@ -56,38 +68,18 @@ function DriverPin({ color }: { color: string }) {
   );
 }
 
-// Minimal, elegant dark style for Google Maps Native
-const customMapStyle = [
-  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
-  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
-  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
-  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
-  { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }
-];
-
 export function RideMap({
   userLocation,
   pickupLocation,
   dropoffLocation,
+  selectedPin,
   routePolyline,
   routeColor,
   nearbyDrivers = [],
   hotspots = [],
   onPickupSelect,
   onDropoffSelect,
+  onMapClick,
   style,
   mapRef,
 }: RideMapProps) {
@@ -107,8 +99,8 @@ export function RideMap({
   const mapProvider = Platform.OS === "android" && hasAndroidGoogleMapsKey ? PROVIDER_GOOGLE : undefined;
 
   const defaultRegion = {
-    latitude: userLocation?.lat ?? -11.197,
-    longitude: userLocation?.lng ?? 28.891,
+    latitude: userLocation?.lat ?? -15.4167,
+    longitude: userLocation?.lng ?? 28.2833,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
   };
@@ -122,14 +114,18 @@ export function RideMap({
         initialRegion={defaultRegion}
         showsUserLocation={!!userLocation}
         showsMyLocationButton
-        userInterfaceStyle="dark"
-        customMapStyle={mapProvider === PROVIDER_GOOGLE ? customMapStyle : undefined}
+        onPress={(e: any) => {
+          const { coordinate } = e.nativeEvent;
+          const pos = { lat: coordinate.latitude, lng: coordinate.longitude };
+          onMapClick?.(pos);
+        }}
         onLongPress={(e: any) => {
           const { coordinate } = e.nativeEvent;
+          const pos = { lat: coordinate.latitude, lng: coordinate.longitude };
           if (onPickupSelect && !pickupLocation) {
-            onPickupSelect({ lat: coordinate.latitude, lng: coordinate.longitude });
+            onPickupSelect(pos);
           } else if (onDropoffSelect) {
-            onDropoffSelect({ lat: coordinate.latitude, lng: coordinate.longitude });
+            onDropoffSelect(pos);
           }
         }}
       >
@@ -150,6 +146,16 @@ export function RideMap({
             anchor={{ x: 0.5, y: 1 }}
           >
             <DropoffPin color={mapTheme.mapDropoff} />
+          </Marker>
+        )}
+
+        {/* Selected Pin */}
+        {selectedPin && (
+          <Marker
+            coordinate={{ latitude: selectedPin.lat, longitude: selectedPin.lng }}
+            anchor={{ x: 0.5, y: 1 }}
+          >
+            <SelectedPin />
           </Marker>
         )}
 
@@ -177,22 +183,21 @@ export function RideMap({
           />
         ))}
 
-        {/* Route casing (darker casing for dark map) */}
+        {/* Route casing */}
         {routeCoordinates.length > 1 && (
           <Polyline
             coordinates={routeCoordinates}
             strokeColor="#0F172A"
-            strokeWidth={11}
+            strokeWidth={9}
           />
         )}
 
-        {/* Route line (colored, on top) */}
+        {/* Route line */}
         {routeCoordinates.length > 1 && (
           <Polyline
             coordinates={routeCoordinates}
             strokeColor={routeColor ?? mapTheme.accent}
             strokeWidth={5}
-            lineDashPattern={routeColor ? [0] : undefined} // Add dash for in-progress if needed
           />
         )}
       </MapView>
@@ -201,9 +206,8 @@ export function RideMap({
 }
 
 const styles = StyleSheet.create({
-  wrapper: { height: 300 },
+  wrapper: { height: 300, borderRadius: 16, overflow: "hidden" },
   map: { flex: 1 },
-  // Pin marker
   pinWrap: { alignItems: "center" },
   pinBubble: {
     flexDirection: "row",
@@ -227,17 +231,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   pinTip: {
-    width: 0, height: 0,
-    borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 7,
-    borderLeftColor: "transparent", borderRightColor: "transparent",
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 7,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
     marginTop: -1,
   },
-  // Driver marker
   driverMarker: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "#1E293B",
     borderWidth: 2,
-    alignItems: "center", justifyContent: "center",
+    alignItems: "center",
+    justifyContent: "center",
     shadowOpacity: 0.6,
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 8,

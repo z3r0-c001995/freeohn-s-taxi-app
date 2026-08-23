@@ -5,7 +5,7 @@ export type PaymentCaptureInput = {
   riderId: number;
   driverId: string;
   amount: number;
-  currency: "USD";
+  currency: "ZMW" | "USD" | string;
 };
 
 export type PaymentCaptureResult = {

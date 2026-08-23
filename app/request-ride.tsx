@@ -49,17 +49,20 @@ export default function RequestRideScreen() {
     Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: true, tension: 60, friction: 10 }).start();
   }, []);
 
-  // Pre-fill pickup from GPS
+  const isInitializedRef = useRef(false);
+
+  // Pre-fill pickup from GPS only once on mount
   useEffect(() => {
-    if (currentLocation && !pickupLocation) {
+    if (isInitializedRef.current) return;
+    if (currentLocation) {
       setPickupLocation({ lat: currentLocation.latitude, lng: currentLocation.longitude });
-      // Reverse geocode for display address
       trpcUtils.maps.reverseGeocode
         .fetch({ lat: currentLocation.latitude, lng: currentLocation.longitude })
         .then((r) => setPickupAddress(r.address || "Current location"))
         .catch(() => setPickupAddress("Current location"));
+      isInitializedRef.current = true;
     }
-  }, [currentLocation, pickupLocation, trpcUtils]);
+  }, [currentLocation, trpcUtils]);
 
   useEffect(() => {
     if (!IS_SEEKER_APP) {

@@ -20,20 +20,31 @@ function DriverPhoneEntry() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {
-    if (!phone.trim()) {
+    let clean = phone.trim().replace(/\s+/g, "");
+    if (!clean) {
       Alert.alert("Validation", "Please enter your phone number.");
       return;
     }
 
-    if (!validatePhoneNumber(phone)) {
+    if (!clean.startsWith("+")) {
+      if (clean.startsWith("0")) {
+        clean = "+260" + clean.slice(1);
+      } else if (clean.startsWith("260")) {
+        clean = "+" + clean;
+      } else {
+        clean = "+260" + clean;
+      }
+    }
+
+    if (!validatePhoneNumber(clean)) {
       Alert.alert("Validation", "Please enter a valid phone number.");
       return;
     }
 
     setIsLoading(true);
     try {
-      await requestOtp(phone);
-      router.push({ pathname: "/otp-verification", params: { phone, role: "driver" } });
+      await requestOtp(clean);
+      router.push({ pathname: "/otp-verification", params: { phone: clean, role: "driver" } });
     } catch (error: any) {
       Alert.alert("Error", error.message || "Failed to send verification code. Please try again.");
     } finally {
@@ -108,10 +119,21 @@ function SeekerPhoneEntry() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {
-    const fullPhone = `${countryCode}${phone}`.replace(/\s+/g, "");
-    if (!phone.trim()) {
+    const raw = phone.trim().replace(/\s+/g, "");
+    if (!raw) {
       Alert.alert("Validation", "Please enter your phone number.");
       return;
+    }
+
+    let fullPhone = "";
+    if (raw.startsWith("+")) {
+      fullPhone = raw;
+    } else if (raw.startsWith("0")) {
+      fullPhone = `${countryCode}${raw.slice(1)}`;
+    } else if (raw.startsWith(countryCode.replace("+", ""))) {
+      fullPhone = `+${raw}`;
+    } else {
+      fullPhone = `${countryCode}${raw}`;
     }
 
     if (!validatePhoneNumber(fullPhone)) {

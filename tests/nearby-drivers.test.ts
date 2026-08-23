@@ -47,7 +47,7 @@ describe("Nearby drivers query", () => {
       lng: 28.3124,
     });
     platformStore.setDriverStatus(two.driverId, {
-      lastSeenAt: new Date(Date.now() - 30_000).toISOString(),
+      lastSeenAt: new Date(Date.now() - 90_000).toISOString(),
     });
 
     const result = tripService.listNearbyDrivers(riderUser, {

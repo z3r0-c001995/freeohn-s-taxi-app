@@ -34,7 +34,8 @@ import {
   startTrip as startRemoteTrip,
   updateDriverStatus,
 } from "@/lib/ride-hailing-api";
-import type { NearbyDriverMarker } from "@/lib/maps/map-types";
+import type { NearbyDriverMarker, PlaceDetails } from "@/lib/maps/map-types";
+import { PlaceSearchInput } from "@/components/places/PlaceSearchInput";
 
 
 
@@ -449,20 +450,22 @@ export default function HomeScreen() {
           <Text style={{ fontSize: 16, color: brand.textMuted, marginTop: 4 }}>Ready to book a ride?</Text>
         </View>
 
-        {/* Search Card */}
-        <AppCard style={{ marginBottom: 20, padding: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: brand.surfaceMuted, borderRadius: radii.lg, paddingHorizontal: 16, height: 56 }}>
-            <Ionicons name="location" size={20} color={brand.primary} />
-            <Text style={{ flex: 1, marginLeft: 10, color: brand.textMuted, fontSize: 16 }}>
-              Enter your destination
-            </Text>
-            <TouchableOpacity 
-              onPress={handleRequestRide}
-              style={{ backgroundColor: brand.accent, paddingHorizontal: 20, paddingVertical: 8, borderRadius: radii.md }}
-            >
-              <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Ride</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Interactive Destination Search Card */}
+        <AppCard style={{ marginBottom: 20, padding: 14, overflow: "visible", zIndex: 50 }}>
+          <Text style={{ fontSize: 13, fontWeight: "800", color: brand.text, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Book a Ride
+          </Text>
+          <PlaceSearchInput
+            placeholder="Where to? (e.g. East Park Mall, Airport)"
+            onPlaceSelect={(place: PlaceDetails) => {
+              router.push(
+                `/request-ride?dest=${encodeURIComponent(place.formatted_address)}&destLat=${place.geometry.location.lat}&destLng=${place.geometry.location.lng}` as never
+              );
+            }}
+            userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
+            dotColor={brand.accent}
+            icon="search"
+          />
         </AppCard>
 
         {/* Home/Work Shortcuts */}
@@ -533,17 +536,38 @@ export default function HomeScreen() {
             />
           </View>
           <View style={{ position: "absolute", right: -20, bottom: -10, width: 150, height: 120 }}>
-             {/* Illustration Placeholder */}
              <Ionicons name="people" size={120} color="rgba(247, 115, 22, 0.1)" />
           </View>
         </AppCard>
 
-        {/* Map Preview (Minimized) */}
-        <View style={{ marginTop: 24, height: 200, borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
+        {/* Live Interactive Map Preview */}
+        <View style={{ marginTop: 24, borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border, ...shadows.md }}>
+          <View style={{ padding: 14, backgroundColor: brand.surface, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Nearby Drivers & Map</Text>
+              <Text style={{ fontSize: 12, color: brand.textMuted, marginTop: 2 }}>
+                {nearbyDrivers.length > 0 ? `${nearbyDrivers.length} drivers active nearby` : "Tap map to choose pickup or destination"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleRequestRide}
+              style={{ backgroundColor: brand.primary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: radii.md }}
+            >
+              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 12 }}>Open Booking</Text>
+            </TouchableOpacity>
+          </View>
           <RideMap
             userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
             nearbyDrivers={nearbyDrivers}
-            style={{ height: 200 }}
+            interactivePlaceSelection={true}
+            showControls={true}
+            onPickupSelect={(loc) => {
+              router.push(`/request-ride?pickupLat=${loc.lat}&pickupLng=${loc.lng}` as never);
+            }}
+            onDropoffSelect={(loc) => {
+              router.push(`/request-ride?destLat=${loc.lat}&destLng=${loc.lng}` as never);
+            }}
+            style={{ height: 280 }}
           />
         </View>
       </ScrollView>

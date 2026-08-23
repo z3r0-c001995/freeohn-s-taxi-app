@@ -5,8 +5,31 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { Platform } from "react-native";
+import { Platform, Alert } from "react-native";
 import "@/lib/_core/nativewind-pressable";
+
+if (Platform.OS === "web") {
+  Alert.alert = (title: string, message?: string, buttons?: any[]) => {
+    if (typeof window !== "undefined") {
+      const text = [title, message].filter(Boolean).join("\n\n");
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(text);
+        if (confirmed) {
+          const okBtn = buttons.find((b) => b.style !== "cancel" && b.onPress) || buttons[0];
+          okBtn?.onPress?.();
+        } else {
+          const cancelBtn = buttons.find((b) => b.style === "cancel" && b.onPress);
+          cancelBtn?.onPress?.();
+        }
+      } else {
+        window.alert(text);
+        if (buttons && buttons[0]?.onPress) {
+          buttons[0].onPress();
+        }
+      }
+    }
+  };
+}
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
   SafeAreaFrameContext,

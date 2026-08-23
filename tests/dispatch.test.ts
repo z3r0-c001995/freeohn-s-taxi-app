@@ -104,7 +104,7 @@ describe("Dispatch service", () => {
       lng: 36.8173,
     });
     platformStore.setDriverStatus(staleProfile.driverId, {
-      lastSeenAt: new Date(Date.now() - 25_000).toISOString(),
+      lastSeenAt: new Date(Date.now() - 90_000).toISOString(),
     });
 
     tripService.setDriverStatus(freshDriverUser, {

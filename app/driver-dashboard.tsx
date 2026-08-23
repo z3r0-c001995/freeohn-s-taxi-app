@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Linking, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
+import { DriverNavBar } from "@/components/navigation/DriverNavBar";
 import { AppBadge } from "@/components/ui/app-badge";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
-import { AppInput } from "@/components/ui/app-input";
 import { APP_LABEL, IS_DRIVER_APP } from "@/constants/app-variant";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useVoiceInstructor } from "@/hooks/use-voice-instructor";
-import { useAppStore } from "@/lib/store";
-import { trpc } from "@/lib/trpc";
-import { getTripRouteColor } from "@/lib/trip-route-style";
+import { getDriverProfile as getLocalDriverProfile } from "@/lib/db-service";
 import {
   acceptDriverRequest,
   completeTrip,
@@ -29,191 +26,88 @@ import {
   updateDriverLocation,
   updateDriverStatus,
 } from "@/lib/ride-hailing-api";
-import {
-  acceptRide as acceptLocalRide,
-  completeRide as completeLocalRide,
-  getAvailableRides,
-  getActiveRidesForUser,
-  getDriverProfile as getLocalDriverProfile,
-  getRideById as getLocalRideById,
-  setDriverOnlineStatus as setLocalDriverOnlineStatus,
-  startRide as startLocalRide,
-} from "@/lib/db-service";
+import { getTripRouteColor } from "@/lib/trip-route-style";
+import { useAppStore } from "@/lib/store";
+import { trpc } from "@/lib/trpc";
+import type { DriverProfileRecord, DriverStatusRecord, TripRecord } from "@shared/ride-hailing";
 
-const DEFAULT_LOCATION = { latitude: -11.197, longitude: 28.891 }; // Mansa
+const DEFAULT_LUSAKA_COORDS = { latitude: -15.4162, longitude: 28.3115 };
 
-const MANSA_HOTSPOTS = [
-  { lat: -11.192, lng: 28.895, radius: 400, color: "#EF4444" },
-  { lat: -11.205, lng: 28.880, radius: 600, color: "#F59E0B" },
-  { lat: -11.185, lng: 28.905, radius: 500, color: "#EF4444" },
-  { lat: -11.200, lng: 28.910, radius: 300, color: "#F59E0B" },
-  { lat: -11.180, lng: 28.890, radius: 450, color: "#3B82F6" },
-];
+type DriverDashboardState = {
+  status: (DriverStatusRecord & { dailyEarnings?: number }) | null;
+  pendingRequests: Array<{
+    id: string;
+    tripId: string;
+    distanceKm?: number;
+    estimatedFare?: number;
+    currency?: string;
+    riderName?: string;
+    riderRating?: number;
+    pickupAddress?: string;
+    dropoffAddress?: string;
+    tripDistanceKm?: number;
+    tripDurationSeconds?: number;
+    rideType?: string;
+    paymentMethod?: string;
+  }>;
+  activeTrips: TripRecord[];
+  profile: DriverProfileRecord | null;
+};
 
 export default function DriverDashboardScreen() {
   const router = useRouter();
   const brand = useBrandTheme();
   const trpcUtils = trpc.useUtils();
-  const { currentUser, currentLocation, setCurrentLocation, setActiveRide, persist } = useAppStore();
+  const { currentUser, currentLocation, setCurrentLocation } = useAppStore();
   const { isTracking } = useLocationTracking();
 
   const [isOnline, setIsOnline] = useState(false);
-  const [dashboard, setDashboard] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [tripActionLoading, setTripActionLoading] = useState<"arrived" | "start" | "complete" | null>(null);
-  const [startPin, setStartPin] = useState("");
-  const [isOfflineMode, setIsOfflineMode] = useState(false);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
-  const [locationLabel, setLocationLabel] = useState("Resolving location...");
-  const [searchArea, setSearchArea] = useState<"current_location" | "open_zone">("current_location");
-  const [searchRadius, setSearchRadius] = useState<number>(5);
+  const [dashboardData, setDashboardData] = useState<DriverDashboardState | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [passengerPin, setPassengerPin] = useState("");
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [currentLocationAddress, setCurrentLocationAddress] = useState<string>("Resolving location...");
+  const [dispatchRadiusKm, setDispatchRadiusKm] = useState<number>(5);
 
-  const dateLabel = useMemo(
-    () =>
-      new Date().toLocaleDateString([], {
-        weekday: "short",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-    [],
-  );
-  const timeLabel = useMemo(
-    () =>
-      new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    [],
-  );
-
-  const gpsLabel = currentLocation
-    ? `${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`
-    : "Waiting for GPS lock";
-
+  // Reverse geocode driver's current position
   useEffect(() => {
     let cancelled = false;
-    const resolveAddress = async () => {
-      const source = currentLocation ?? DEFAULT_LOCATION;
+    const resolve = async () => {
+      const coords = currentLocation ?? DEFAULT_LUSAKA_COORDS;
       try {
-        const result = await trpcUtils.maps.reverseGeocode.fetch({
-          lat: source.latitude,
-          lng: source.longitude,
+        const res = await trpcUtils.maps.reverseGeocode.fetch({
+          lat: coords.latitude,
+          lng: coords.longitude,
         });
         if (!cancelled) {
-          setLocationLabel(result.address || "Current location");
+          setCurrentLocationAddress(res.address || `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`);
         }
       } catch {
         if (!cancelled) {
-          setLocationLabel("Current location");
+          setCurrentLocationAddress(`${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`);
         }
       }
     };
-    void resolveAddress();
+    void resolve();
     return () => {
       cancelled = true;
     };
   }, [currentLocation, trpcUtils]);
 
-  const loadDashboardLocal = useCallback(async () => {
-    if (!currentUser) return;
-    const profile = await getLocalDriverProfile(currentUser.id.toString());
-    const available = await getAvailableRides();
-    const localActiveTrips = await getActiveRidesForUser(currentUser.id.toString());
-    const pendingRequests = available.map((ride) => ({
-      id: ride.id.toString(),
-      tripId: ride.id.toString(),
-      distanceKm: 0,
-      estimatedFare: Number(ride.fareAmount ?? 0),
-      riderName: "Service Seeker",
-    }));
-    const localProfile = profile
-      ? {
-          driverId: `local-driver-${currentUser.id}`,
-          userId: currentUser.id,
-          verified: false,
-          rating: 5,
-          totalTrips: profile.totalTrips ?? 0,
-          vehicle: {
-            make: profile.vehicleMake || "Vehicle",
-            model: profile.vehicleModel || "",
-            color: "N/A",
-            plateNumber: profile.plateNumber || "N/A",
-          },
-          personalInfo: {
-            fullName: currentUser.name || "Driver",
-            phoneNumber: String((currentUser as any).openId ?? (currentUser as any).phone ?? ""),
-            nrcNumber: "N/A",
-            homeAddress: "N/A",
-            emergencyContactName: null,
-            emergencyContactPhone: null,
-          },
-          compliance: {
-            driversLicenseNumber: profile.licenseNumber || "N/A",
-            vehicleRegistrationNumber: "N/A",
-            hasDriversLicense: Boolean(profile.licenseNumber),
-            hasVehicleRegistrationDocument: false,
-            insured: false,
-            roadTaxCleared: false,
-            fitnessTestPassed: false,
-          },
-          commercial: {
-            ridesPurchased: 0,
-            ridesCompleted: 0,
-            notes: "Local-only profile",
-          },
-          documents: {
-            driversLicenseDocumentRef: "",
-            vehicleRegistrationDocumentRef: "",
-            insuranceDocumentRef: "",
-            roadTaxDocumentRef: "",
-            fitnessCertificateDocumentRef: "",
-          },
-          audit: {
-            createdAt: profile.createdAt?.toISOString?.() ?? new Date().toISOString(),
-            updatedAt: profile.updatedAt?.toISOString?.() ?? new Date().toISOString(),
-            createdByAdminId: null,
-            updatedByAdminId: null,
-            verificationReviewedAt: null,
-            compliance: {
-              driversLicenseCheckedAt: null,
-              vehicleRegistrationCheckedAt: null,
-              insuranceCheckedAt: null,
-              roadTaxCheckedAt: null,
-              fitnessCheckedAt: null,
-            },
-          },
-        }
-      : null;
-
-    setDashboard({
-      status: { isOnline: Boolean(profile?.isOnline), dailyEarnings: profile?.totalEarnings ?? 0 },
-      pendingRequests,
-      activeTrips: localActiveTrips ?? [],
-      profile: localProfile,
-    });
-    setIsOnline(Boolean(profile?.isOnline));
-  }, [currentUser]);
-
-  const loadDashboard = useCallback(async () => {
+  // Load Dashboard Data
+  const refreshDashboard = useCallback(async () => {
     if (!currentUser) return;
     try {
-      const result = await getDriverDashboard();
-      setDashboard(result);
-      setIsOnline(Boolean(result?.status?.isOnline));
-      setIsOfflineMode(false);
-      setDashboardError(null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to load driver dashboard.";
-      if (Platform.OS === "web") {
-        setDashboardError(message);
-        return;
-      }
-      await loadDashboardLocal();
-      setIsOfflineMode(true);
-      setDashboardError(message);
+      const data = await getDriverDashboard();
+      setDashboardData(data);
+      setIsOnline(Boolean(data?.status?.isOnline));
+      setSyncErrorMessage(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unable to sync driver status";
+      setSyncErrorMessage(msg);
     }
-  }, [currentUser, loadDashboardLocal]);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!IS_DRIVER_APP) {
@@ -222,697 +116,856 @@ export default function DriverDashboardScreen() {
       ]);
       return;
     }
-
     if (!currentUser) return;
-    void loadDashboard();
-
-    const timer = setInterval(() => {
-      void loadDashboard();
+    void refreshDashboard();
+    const interval = setInterval(() => {
+      void refreshDashboard();
     }, 5000);
+    return () => clearInterval(interval);
+  }, [currentUser, refreshDashboard, router]);
 
-    return () => clearInterval(timer);
-  }, [currentUser, loadDashboard, router]);
-
-  const refreshPendingRequests = useCallback(async () => {
+  // Poll for incoming requests when online
+  const pollRequests = useCallback(async () => {
     if (!currentUser || !isOnline) return;
     try {
-      const requests = await getDriverRequests();
-      setDashboard((prev: any) => ({
-        ...(prev ?? {}),
-        pendingRequests: requests.requests ?? [],
+      const res = await getDriverRequests();
+      setDashboardData((prev) => ({
+        ...(prev ?? {
+          status: null,
+          pendingRequests: [],
+          activeTrips: [],
+          profile: null,
+        }),
+        pendingRequests: res.requests ?? [],
       }));
-      setDashboardError(null);
     } catch {
-      // Keep previous requests list; dashboard polling and heartbeat continue.
+      // Ignore background polling errors
     }
   }, [currentUser, isOnline]);
 
   useEffect(() => {
     if (!isOnline) return;
-    const timer = setInterval(() => {
-      void refreshPendingRequests();
+    const interval = setInterval(() => {
+      void pollRequests();
     }, 2000);
-    void refreshPendingRequests();
-    return () => clearInterval(timer);
-  }, [isOnline, refreshPendingRequests]);
+    void pollRequests();
+    return () => clearInterval(interval);
+  }, [isOnline, pollRequests]);
 
-  const pendingOffer = dashboard?.pendingRequests?.[0] ?? null;
-  const activeTrip = useMemo(() => dashboard?.activeTrips?.[0] ?? null, [dashboard?.activeTrips]);
-  const driverProfile = dashboard?.profile ?? null;
+  const pendingRequest = dashboardData?.pendingRequests?.[0] ?? null;
+  const activeTrip = useMemo(() => dashboardData?.activeTrips?.[0] ?? null, [dashboardData?.activeTrips]);
+  const driverProfile = dashboardData?.profile ?? null;
 
-  // Voice instructor: speaks Uber-style navigation cues at each state change
   useVoiceInstructor({
     tripState: activeTrip?.state ?? null,
-    hasNewRequest: !!pendingOffer,
+    hasNewRequest: !!pendingRequest,
   });
-  const ridesRemaining = useMemo(() => {
+
+  const remainingCredits = useMemo(() => {
     if (!driverProfile?.commercial) return 0;
-    return Math.max(0, (driverProfile.commercial.ridesPurchased ?? 0) - (driverProfile.commercial.ridesCompleted ?? 0));
+    const purchased = driverProfile.commercial.ridesPurchased ?? 0;
+    const completed = driverProfile.commercial.ridesCompleted ?? 0;
+    return Math.max(0, purchased - completed);
   }, [driverProfile?.commercial]);
 
-  const formatAuditTime = useCallback((value?: string | null) => {
-    if (!value) return "Pending";
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return "Pending";
-    return parsed.toLocaleString();
-  }, []);
-
-  const pickupLocation = useMemo(() => {
-    if (!activeTrip && !pendingOffer) return undefined;
-    const source = activeTrip ?? pendingOffer;
-    const lat = Number(source?.pickup?.lat ?? source?.pickupLat);
-    const lng = Number(source?.pickup?.lng ?? source?.pickupLng);
+  // Active Trip Coordinates & Route
+  const tripPickupCoord = useMemo(() => {
+    if (!activeTrip && !pendingRequest) return undefined;
+    const t = activeTrip ?? pendingRequest;
+    const lat = Number((t as any)?.pickup?.lat ?? (t as any)?.pickupLat);
+    const lng = Number((t as any)?.pickup?.lng ?? (t as any)?.pickupLng);
     return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
-  }, [activeTrip, pendingOffer]);
+  }, [activeTrip, pendingRequest]);
 
-  const dropoffLocation = useMemo(() => {
+  const tripDropoffCoord = useMemo(() => {
     if (!activeTrip) return undefined;
-    const lat = Number(activeTrip.dropoff?.lat ?? activeTrip.dropoffLat);
-    const lng = Number(activeTrip.dropoff?.lng ?? activeTrip.dropoffLng);
+    const lat = Number(activeTrip.dropoff?.lat ?? (activeTrip as any).dropoffLat);
+    const lng = Number(activeTrip.dropoff?.lng ?? (activeTrip as any).dropoffLng);
     return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
   }, [activeTrip]);
 
   const { data: routeData } = trpc.maps.computeRoute.useQuery(
     {
-      origin: pickupLocation!,
-      destination: dropoffLocation!,
+      origin: tripPickupCoord!,
+      destination: tripDropoffCoord!,
       travelMode: "DRIVE",
     },
     {
-      enabled: !!activeTrip && !!pickupLocation && !!dropoffLocation,
+      enabled: !!activeTrip && !!tripPickupCoord && !!tripDropoffCoord,
     },
   );
 
-  const routeColor = useMemo(
-    () => getTripRouteColor(activeTrip?.state, brand),
-    [activeTrip?.state, brand],
-  );
+  const routeColor = useMemo(() => getTripRouteColor(activeTrip?.state, brand), [activeTrip?.state, brand]);
 
-  const activeTripDriverMarker = useMemo(() => {
-    if (!activeTrip) return undefined;
-
-    const statusLat = Number(dashboard?.status?.lat);
-    const statusLng = Number(dashboard?.status?.lng);
-    if (Number.isFinite(statusLat) && Number.isFinite(statusLng)) {
-      return {
-        lat: statusLat,
-        lng: statusLng,
-      };
-    }
-
+  // Driver Location Marker
+  const driverMarker = useMemo(() => {
     if (currentLocation) {
-      return {
-        lat: currentLocation.latitude,
-        lng: currentLocation.longitude,
-      };
+      return { lat: currentLocation.latitude, lng: currentLocation.longitude };
     }
+    return { lat: DEFAULT_LUSAKA_COORDS.latitude, lng: DEFAULT_LUSAKA_COORDS.longitude };
+  }, [currentLocation]);
 
-    return undefined;
-  }, [activeTrip, currentLocation, dashboard?.status?.lat, dashboard?.status?.lng]);
-
-  const mapUserLocation = useMemo(() => {
-    if (activeTrip) return undefined;
-    if (!currentLocation) return undefined;
-    return { lat: currentLocation.latitude, lng: currentLocation.longitude };
-  }, [activeTrip, currentLocation]);
-
-  const canMarkArrived = activeTrip?.state === "DRIVER_ASSIGNED";
-  const pinRequired = activeTrip?.state === "PIN_VERIFICATION";
-  const canStartTrip = activeTrip?.state === "DRIVER_ARRIVING" || pinRequired;
-  const canCompleteTrip = activeTrip?.state === "IN_PROGRESS";
-
-  const toggleOnline = async () => {
+  // Toggle Online/Offline Status
+  const handleToggleOnline = async () => {
     try {
-      setIsLoading(true);
-      const next = !isOnline;
-      let sourceLocation = currentLocation ?? null;
+      setIsUpdatingStatus(true);
+      const nextOnline = !isOnline;
+      const coords = currentLocation ?? DEFAULT_LUSAKA_COORDS;
 
-      if (next && !sourceLocation) {
-        try {
-          const permission = await Location.requestForegroundPermissionsAsync();
-          if (permission.status === "granted") {
-            const position = await Location.getCurrentPositionAsync({});
-            sourceLocation = {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            };
-            setCurrentLocation(sourceLocation);
-          } else if (!permission.canAskAgain) {
-            Alert.alert(
-              "Location Permission Denied",
-              "Please enable location permissions in settings to go online properly.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Open Settings", onPress: () => Linking.openSettings() }
-              ]
-            );
-          }
-        } catch {
-          // keep fallback below
-        }
+      await updateDriverStatus({
+        isOnline: nextOnline,
+        ...(nextOnline ? { lat: coords.latitude, lng: coords.longitude } : {}),
+      });
+
+      setIsOnline(nextOnline);
+      await refreshDashboard();
+      if (nextOnline) {
+        void pollRequests();
       }
-
-      if (next && !sourceLocation) {
-        sourceLocation = DEFAULT_LOCATION;
-      }
-      const effectiveLocation = sourceLocation ?? DEFAULT_LOCATION;
-
-      let usedOfflineMode = false;
-
-      try {
-        await updateDriverStatus({
-          isOnline: next,
-          ...(next
-            ? {
-                lat: effectiveLocation.latitude,
-                lng: effectiveLocation.longitude,
-              }
-            : {}),
-        });
-        setIsOnline(next);
-        setIsOfflineMode(false);
-      } catch (error) {
-        if (Platform.OS === "web") {
-          throw error;
-        }
-        if (!currentUser) throw error;
-        await setLocalDriverOnlineStatus(currentUser.id.toString(), next);
-        setIsOfflineMode(true);
-        usedOfflineMode = true;
-      }
-
-      await loadDashboard();
-      if (next) {
-        void refreshPendingRequests();
-      }
-
-      if (usedOfflineMode) {
-        Alert.alert("Offline Mode", `Driver status updated locally: ${next ? "online" : "offline"}.`);
-      }
-    } catch (error) {
-      Alert.alert("Status update failed", error instanceof Error ? error.message : "Try again");
+    } catch (err) {
+      Alert.alert("Status update failed", err instanceof Error ? err.message : "Try again");
     } finally {
-      setIsLoading(false);
+      setIsUpdatingStatus(false);
     }
   };
 
-  useEffect(() => {
-    if (!isOnline) return;
-    let cancelled = false;
-
-    const heartbeat = async () => {
-      const source = currentLocation ?? DEFAULT_LOCATION;
-      try {
-        await updateDriverLocation({
-          lat: source.latitude,
-          lng: source.longitude,
-          tripId: activeTrip?.id,
-        });
-        if (!cancelled) {
-          setIsOfflineMode(false);
-        }
-      } catch {
-        // No-op: dashboard polling/local fallback still handles UI.
-      }
-    };
-
-    void heartbeat();
-    const timer = setInterval(() => {
-      void heartbeat();
-    }, 4000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [currentLocation, isOnline, activeTrip?.id]);
-
-  const onAccept = async (offerId: string) => {
+  // Trip Actions
+  const handleAcceptRequest = async (offerId: string) => {
     try {
-      try {
-        await acceptDriverRequest(offerId);
-        setIsOfflineMode(false);
-      } catch (error) {
-        if (Platform.OS === "web") throw error;
-        if (!currentUser) throw error;
-        await acceptLocalRide(offerId, currentUser.id.toString());
-        const ride = await getLocalRideById(offerId);
-        if (ride) {
-          setActiveRide(ride as any);
-          await persist();
-        }
-        setIsOfflineMode(true);
-      }
-      await loadDashboard();
-      Alert.alert("Ride accepted", "Navigate to passenger pickup.");
-    } catch (error) {
-      Alert.alert("Accept failed", error instanceof Error ? error.message : "Try again");
+      await acceptDriverRequest(offerId);
+      await refreshDashboard();
+      Alert.alert("Ride Accepted", "Navigate towards the passenger pickup location.");
+    } catch (err) {
+      Alert.alert("Accept Failed", err instanceof Error ? err.message : "Try again");
     }
   };
 
-  const onDecline = async (offerId: string) => {
+  const handleDeclineRequest = async (offerId: string) => {
     try {
-      try {
-        await declineDriverRequest(offerId);
-        setIsOfflineMode(false);
-      } catch (error) {
-        if (Platform.OS === "web") throw error;
-        setDashboard((prev: any) => ({
-          ...prev,
-          pendingRequests: (prev?.pendingRequests ?? []).filter((offer: any) => offer.id !== offerId),
-        }));
-        setIsOfflineMode(true);
-      }
-      await loadDashboard();
-    } catch (error) {
-      Alert.alert("Decline failed", error instanceof Error ? error.message : "Try again");
+      await declineDriverRequest(offerId);
+      await refreshDashboard();
+    } catch (err) {
+      Alert.alert("Decline Failed", err instanceof Error ? err.message : "Try again");
     }
   };
 
-  const onArrived = async () => {
-    if (!activeTrip?.id) return;
-    try {
-      setTripActionLoading("arrived");
-      try {
-        await driverArrived(activeTrip.id);
-        setDashboard((prev: any) => ({
-          ...(prev ?? {}),
-          activeTrips: (prev?.activeTrips ?? []).map((trip: any) =>
-            trip.id === activeTrip.id ? { ...trip, state: "DRIVER_ARRIVING" } : trip,
-          ),
-        }));
-        setIsOfflineMode(false);
-      } catch (error) {
-        if (Platform.OS === "web") throw error;
-        setIsOfflineMode(true);
-      }
-      await loadDashboard();
-    } catch (error) {
-      Alert.alert("Arrived update failed", error instanceof Error ? error.message : "Try again");
-    } finally {
-      setTripActionLoading(null);
-    }
-  };
-
-  const onStartTrip = async () => {
-    if (!activeTrip?.id) return;
-    try {
-      setTripActionLoading("start");
-      try {
-        await startTrip(activeTrip.id, { pin: startPin.trim() || undefined });
-        setDashboard((prev: any) => ({
-          ...(prev ?? {}),
-          activeTrips: (prev?.activeTrips ?? []).map((trip: any) =>
-            trip.id === activeTrip.id ? { ...trip, state: "IN_PROGRESS" } : trip,
-          ),
-        }));
-        setIsOfflineMode(false);
-      } catch (error) {
-        if (Platform.OS === "web") throw error;
-        await startLocalRide(activeTrip.id.toString());
-        setIsOfflineMode(true);
-      }
-      await loadDashboard();
-      setStartPin("");
-    } catch (error) {
-      Alert.alert("Start failed", error instanceof Error ? error.message : "Try again");
-    } finally {
-      setTripActionLoading(null);
-    }
-  };
-
-  const onCompleteTrip = async () => {
-    if (!activeTrip?.id) return;
-    try {
-      setTripActionLoading("complete");
-      try {
-        await completeTrip(activeTrip.id);
-        setDashboard((prev: any) => ({
-          ...(prev ?? {}),
-          activeTrips: (prev?.activeTrips ?? []).filter((trip: any) => trip.id !== activeTrip.id),
-        }));
-        setIsOfflineMode(false);
-      } catch (error) {
-        if (Platform.OS === "web") throw error;
-        await completeLocalRide(activeTrip.id.toString());
-        setIsOfflineMode(true);
-      }
-      await loadDashboard();
-    } catch (error) {
-      Alert.alert("Complete failed", error instanceof Error ? error.message : "Try again");
-    } finally {
-      setTripActionLoading(null);
-    }
-  };
+  const isAssigned = activeTrip?.state === "DRIVER_ASSIGNED";
+  const isArriving = activeTrip?.state === "DRIVER_ARRIVING" || activeTrip?.state === "PIN_VERIFICATION";
+  const isInProgress = activeTrip?.state === "IN_PROGRESS";
 
   return (
     <ScreenContainer className="bg-background" containerClassName="bg-background">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View style={{ gap: 16, paddingBottom: 20 }}>
-          <View
-            style={{
-              borderRadius: radii.xl,
-              padding: 18,
-              backgroundColor: "#0F1E4A",
-              ...shadows.md,
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <TouchableOpacity
-                onPress={() => router.back()}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 999,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "rgba(255,255,255,0.14)",
-                }}
-              >
-                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-              <AppBadge label={isOnline ? "ONLINE" : "OFFLINE"} tone={isOnline ? "success" : "warning"} />
+      <View style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+          <View style={{ gap: 14, paddingHorizontal: 16, paddingTop: 14 }}>
+            
+            {/* Top Navigation & Status Bar */}
+            <View
+              style={[
+                styles.headerCard,
+                {
+                  backgroundColor: "#0A1B3F",
+                  borderColor: isOnline ? "#22C55E" : "#334155",
+                },
+              ]}
+            >
+              <View style={styles.headerTopRow}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={styles.driverAvatar}>
+                    <Text style={styles.avatarText}>
+                      {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : "D"}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={styles.driverName}>{currentUser?.name || "Freeohn Driver"}</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+                      <Ionicons name="shield-checkmark" size={13} color="#22C55E" />
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#86EFAC" }}>VERIFIED DRIVER</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Online / Offline Status Indicator Pill */}
+                <View
+                  style={[
+                    styles.statusPill,
+                    {
+                      backgroundColor: isOnline ? "rgba(34, 197, 94, 0.18)" : "rgba(239, 68, 68, 0.18)",
+                      borderColor: isOnline ? "#22C55E" : "#EF4444",
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.statusDot,
+                      {
+                        backgroundColor: isOnline ? "#22C55E" : "#EF4444",
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.statusPillText,
+                      {
+                        color: isOnline ? "#4ADE80" : "#FCA5A5",
+                      },
+                    ]}
+                  >
+                    {isOnline ? "ONLINE" : "OFFLINE"}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Earnings Quick Counter */}
+              <View style={styles.headerStatsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Today&apos;s Earnings</Text>
+                  <Text style={styles.statValue}>K{(dashboardData?.status?.dailyEarnings ?? 0).toFixed(0)}</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Completed Trips</Text>
+                  <Text style={styles.statValue}>{driverProfile?.totalTrips ?? 0}</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Ride Credits</Text>
+                  <Text style={styles.statValue}>{remainingCredits}</Text>
+                </View>
+              </View>
             </View>
 
-            <Text style={{ marginTop: 14, fontSize: 29, fontWeight: "800", color: "#FFFFFF" }}>Driver Dashboard</Text>
-            <Text style={{ marginTop: 6, fontSize: 13, color: "#CBD5E1" }}>{APP_LABEL}</Text>
+            {/* Tactile Go Online / Go Offline Master Glow Button */}
+            <TouchableOpacity
+              onPress={() => void handleToggleOnline()}
+              disabled={isUpdatingStatus}
+              activeOpacity={0.8}
+              style={[
+                styles.powerButton,
+                {
+                  backgroundColor: isOnline ? "#DC2626" : "#16A34A",
+                  shadowColor: isOnline ? "#DC2626" : "#16A34A",
+                },
+              ]}
+            >
+              {isUpdatingStatus ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name={isOnline ? "power" : "radio"} size={24} color="#FFFFFF" />
+              )}
+              <Text style={styles.powerButtonText}>
+                {isUpdatingStatus ? "UPDATING RADAR..." : isOnline ? "GO OFFLINE" : "⚡ GO ONLINE"}
+              </Text>
+            </TouchableOpacity>
 
-            <View style={{ marginTop: 12, flexDirection: "row", gap: 16 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 12, color: "#CBD5E1" }}>Today</Text>
-                <Text style={{ marginTop: 3, fontSize: 24, fontWeight: "800", color: "#FFFFFF" }}>
-                  ${(dashboard?.status?.dailyEarnings ?? 0).toFixed(2)}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 12, color: "#CBD5E1" }}>Requests</Text>
-                <Text style={{ marginTop: 3, fontSize: 24, fontWeight: "800", color: "#FFFFFF" }}>
-                  {dashboard?.pendingRequests?.length ?? 0}
+            {/* Interactive Hero Radar Map */}
+            <View style={[styles.mapContainer, { borderColor: brand.border }]}>
+              <RideMap
+                userLocation={driverMarker}
+                pickupLocation={tripPickupCoord}
+                dropoffLocation={tripDropoffCoord}
+                routePolyline={routeData?.encodedPolyline}
+                routeColor={routeColor}
+                showControls={true}
+                initialStyle="streets"
+                style={{ height: 320 }}
+              />
+              <View style={[styles.locationFooter, { backgroundColor: brand.surface }]}>
+                <Ionicons name="navigate" size={14} color={brand.primary} />
+                <Text style={[styles.locationFooterText, { color: brand.textMuted }]} numberOfLines={1}>
+                  {currentLocationAddress}
                 </Text>
               </View>
             </View>
 
-            <View style={{ marginTop: 24, backgroundColor: "rgba(0,0,0,0.15)", borderRadius: radii.lg, padding: 16 }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: "#FFFFFF", marginBottom: 12 }}>Service Area Preferences</Text>
-              
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <TouchableOpacity
-                  onPress={() => setSearchArea("current_location")}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 10,
-                    alignItems: "center",
-                    borderRadius: radii.md,
-                    backgroundColor: searchArea === "current_location" ? brand.primary : "rgba(255,255,255,0.08)",
-                    borderWidth: 1,
-                    borderColor: searchArea === "current_location" ? brand.primary : "transparent"
-                  }}
-                >
-                  <Text style={{ color: "#FFF", fontSize: 13, fontWeight: searchArea === "current_location" ? "700" : "500" }}>Nearby</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setSearchArea("open_zone")}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 10,
-                    alignItems: "center",
-                    borderRadius: radii.md,
-                    backgroundColor: searchArea === "open_zone" ? brand.primary : "rgba(255,255,255,0.08)",
-                    borderWidth: 1,
-                    borderColor: searchArea === "open_zone" ? brand.primary : "transparent"
-                  }}
-                >
-                  <Text style={{ color: "#FFF", fontSize: 13, fontWeight: searchArea === "open_zone" ? "700" : "500" }}>Anywhere</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={{ marginTop: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Text style={{ color: "#CBD5E1", fontSize: 13 }}>Dispatch Target Radius</Text>
-                <Text style={{ color: "#FFF", fontSize: 14, fontWeight: "700" }}>{searchRadius} km</Text>
+            {/* Service Radius Filter Selector */}
+            <View style={[styles.radiusCard, { backgroundColor: brand.surface, borderColor: brand.border }]}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="compass-outline" size={16} color={brand.primary} />
+                  <Text style={[styles.radiusTitle, { color: brand.text }]}>Dispatch Target Radius</Text>
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: "800", color: brand.primary }}>{dispatchRadiusKm} km</Text>
               </View>
               <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-                {[2, 5, 10, 20].map((rad) => (
+                {[2, 5, 10, 20].map((radius) => (
                   <TouchableOpacity
-                    key={rad}
-                    onPress={() => setSearchRadius(rad)}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 8,
-                      alignItems: "center",
-                      borderRadius: radii.sm,
-                      backgroundColor: searchRadius === rad ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.08)"
-                    }}
+                    key={radius}
+                    onPress={() => setDispatchRadiusKm(radius)}
+                    style={[
+                      styles.radiusPill,
+                      {
+                        backgroundColor: dispatchRadiusKm === radius ? brand.primary : brand.surfaceMuted,
+                        borderColor: dispatchRadiusKm === radius ? brand.primary : brand.border,
+                      },
+                    ]}
                   >
-                    <Text style={{ color: "#FFF", fontSize: 13, fontWeight: "600" }}>{rad}</Text>
+                    <Text
+                      style={[
+                        styles.radiusPillText,
+                        {
+                          color: dispatchRadiusKm === radius ? "#FFFFFF" : brand.text,
+                          fontWeight: dispatchRadiusKm === radius ? "800" : "600",
+                        },
+                      ]}
+                    >
+                      {radius} km
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            <View style={{ marginTop: 24 }}>
-              <TouchableOpacity
-                onPress={toggleOnline}
-                disabled={isLoading}
-                style={{
-                  backgroundColor: isOnline ? "#EF4444" : "#10B981",
-                  paddingVertical: 18,
-                  borderRadius: radii.xl,
-                  alignItems: "center",
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  gap: 8,
-                  opacity: isLoading ? 0.7 : 1,
-                  shadowColor: isOnline ? "#EF4444" : "#10B981",
-                  shadowOpacity: 0.3,
-                  shadowRadius: 10,
-                  shadowOffset: { width: 0, height: 4 },
-                }}
-              >
-                <Ionicons name={isOnline ? "power" : "radio"} size={22} color="#FFFFFF" />
-                <Text style={{ color: "#FFFFFF", fontSize: 17, fontWeight: "800", letterSpacing: 0.5 }}>
-                  {isLoading ? "UPDATING STATUS..." : isOnline ? "GO OFFLINE" : "GO ONLINE"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={{ borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border }}>
-            <RideMap
-              userLocation={mapUserLocation}
-              pickupLocation={pickupLocation}
-              dropoffLocation={dropoffLocation}
-              routePolyline={routeData?.encodedPolyline}
-              routeColor={routeColor}
-              nearbyDrivers={activeTripDriverMarker ? [activeTripDriverMarker] : []}
-              hotspots={MANSA_HOTSPOTS}
-              style={{ height: 340 }}
-            />
-
-            <View style={{ padding: 12, backgroundColor: brand.surface }}>
-              <Text style={{ fontSize: 12, color: brand.textMuted }}>Location: {locationLabel}</Text>
-              {Platform.OS !== "web" ? (
-                <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>GPS: {gpsLabel}</Text>
-              ) : null}
-              <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
-                Tracking: {isTracking ? "live (2-5s updates)" : "inactive"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
-                {dateLabel} • {timeLabel}
-              </Text>
-            </View>
-          </View>
-
-          {driverProfile ? (
-            <AppCard>
-              <Text style={{ fontSize: 17, fontWeight: "800", color: brand.text }}>
-                Driver Profile & Important Info
-              </Text>
-              <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>
-                Name: {driverProfile.personalInfo?.fullName || currentUser?.name || "-"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Phone: {driverProfile.personalInfo?.phoneNumber || "-"} • NRC: {driverProfile.personalInfo?.nrcNumber || "-"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Address: {driverProfile.personalInfo?.homeAddress || "-"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Vehicle: {driverProfile.vehicle?.make} {driverProfile.vehicle?.model} • {driverProfile.vehicle?.plateNumber} •{" "}
-                {driverProfile.vehicle?.color}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                License: {driverProfile.compliance?.driversLicenseNumber || "-"} • Registration:{" "}
-                {driverProfile.compliance?.vehicleRegistrationNumber || "-"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Compliance: license {driverProfile.compliance?.hasDriversLicense ? "yes" : "no"}, registration{" "}
-                {driverProfile.compliance?.hasVehicleRegistrationDocument ? "yes" : "no"}, insurance{" "}
-                {driverProfile.compliance?.insured ? "yes" : "no"}, road tax{" "}
-                {driverProfile.compliance?.roadTaxCleared ? "yes" : "no"}, fitness{" "}
-                {driverProfile.compliance?.fitnessTestPassed ? "yes" : "no"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Documents: {driverProfile.documents?.driversLicenseDocumentRef || "-"}, {" "}
-                {driverProfile.documents?.vehicleRegistrationDocumentRef || "-"}, {" "}
-                {driverProfile.documents?.insuranceDocumentRef || "-"}, {" "}
-                {driverProfile.documents?.roadTaxDocumentRef || "-"}, {" "}
-                {driverProfile.documents?.fitnessCertificateDocumentRef || "-"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Credits: purchased {driverProfile.commercial?.ridesPurchased ?? 0}, completed{" "}
-                {driverProfile.commercial?.ridesCompleted ?? 0}, remaining {ridesRemaining}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Verified: {driverProfile.verified ? "yes" : "no"} • Last verification:{" "}
-                {formatAuditTime(driverProfile.audit?.verificationReviewedAt)}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 12, color: brand.textMuted }}>
-                Profile audit: updated {formatAuditTime(driverProfile.audit?.updatedAt)}
-              </Text>
-              <View style={{ marginTop: 12 }}>
-                <AppButton
-                  label="Open Full Driver Profile"
-                  variant="outline"
-                  onPress={() => router.push("/driver-profile" as never)}
-                  leftIcon={<Ionicons name="person-circle-outline" size={16} color={brand.accent} />}
-                />
-              </View>
-            </AppCard>
-          ) : null}
-
-          {pendingOffer ? (
-            <View
-              style={{
-                borderRadius: radii.lg,
-                padding: 16,
-                backgroundColor: brand.surface,
-                borderWidth: 1,
-                borderColor: brand.border,
-                ...shadows.md,
-              }}
-            >
-              <Text style={{ fontSize: 17, fontWeight: "800", color: brand.text }}>Incoming Ride Request</Text>
-              <Text style={{ marginTop: 8, fontSize: 13, color: brand.textMuted }}>
-                Rider: {pendingOffer.riderName ?? "Service Seeker"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Distance to pickup: {(pendingOffer.distanceKm ?? 0).toFixed(2)} km
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Estimated fare: ${(pendingOffer.estimatedFare ?? 0).toFixed(2)}
-              </Text>
-
-              <View style={{ marginTop: 12, flexDirection: "row", gap: 10 }}>
-                <AppButton
-                  label="Accept"
-                  variant="secondary"
-                  fullWidth={false}
-                  style={{ flex: 1 }}
-                  onPress={() => onAccept(pendingOffer.id)}
-                />
-                <AppButton
-                  label="Decline"
-                  variant="outline"
-                  fullWidth={false}
-                  style={{ flex: 1 }}
-                  onPress={() => onDecline(pendingOffer.id)}
-                />
-              </View>
-            </View>
-          ) : (
-            <AppCard tone="muted">
-              <Text style={{ fontSize: 13, color: brand.textMuted }}>No pending ride requests.</Text>
-            </AppCard>
-          )}
-
-          {activeTrip ? (
-            <AppCard>
-              <Text style={{ fontSize: 17, fontWeight: "800", color: brand.text }}>Trip in Progress</Text>
-              <Text style={{ marginTop: 6, fontSize: 13, color: brand.textMuted }}>Trip: {activeTrip.id}</Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>State: {activeTrip.state}</Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Pickup: {activeTrip.pickup?.address ?? "-"}
-              </Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: brand.textMuted }}>
-                Dropoff: {activeTrip.dropoff?.address ?? "-"}
-              </Text>
-
-              {pinRequired ? (
-                <View style={{ marginTop: 10 }}>
-                  <AppInput
-                    label="Passenger PIN (optional)"
-                    placeholder="Enter 4-digit PIN if required"
-                    value={startPin}
-                    onChangeText={setStartPin}
-                    keyboardType="numeric"
-                    maxLength={4}
+            {/* Incoming Ride Request Modal Card */}
+            {pendingRequest && (
+              <View style={[styles.incomingCard, { backgroundColor: "#FFF7ED", borderColor: "#F97316" }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={styles.pulsingBadge}>
+                      <Ionicons name="notifications" size={16} color="#EA580C" />
+                    </View>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: "#9A3412" }}>Incoming Ride Offer</Text>
+                  </View>
+                  <AppBadge
+                    label={`${pendingRequest.currency || "ZMW"} ${(pendingRequest.estimatedFare ?? 0).toFixed(2)}`}
+                    tone="primary"
                   />
                 </View>
-              ) : null}
 
-              <View style={{ marginTop: 12, gap: 8 }}>
-                {canMarkArrived ? (
-                  <AppButton
-                    label="Arrived at Pickup"
-                    variant="secondary"
-                    onPress={onArrived}
-                    loading={tripActionLoading === "arrived"}
-                    disabled={tripActionLoading !== null && tripActionLoading !== "arrived"}
-                  />
-                ) : null}
-                {canStartTrip ? (
-                  <AppButton
-                    label="Start Trip"
-                    variant="primary"
-                    onPress={onStartTrip}
-                    loading={tripActionLoading === "start"}
-                    disabled={tripActionLoading !== null && tripActionLoading !== "start"}
-                  />
-                ) : null}
-                {canCompleteTrip ? (
-                  <AppButton
-                    label="End Trip"
-                    variant="success"
-                    onPress={onCompleteTrip}
-                    loading={tripActionLoading === "complete"}
-                    disabled={tripActionLoading !== null && tripActionLoading !== "complete"}
-                  />
-                ) : null}
+                {/* Passenger Info & Rating */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: "#FED7AA" }}>
+                  <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: "#FFEDD5", alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name="person" size={20} color="#EA580C" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: "800", color: brand.text }}>
+                      {pendingRequest.riderName || "Passenger"}
+                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      <Ionicons name="star" size={13} color="#F59E0B" />
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: brand.text }}>
+                        {(pendingRequest.riderRating ?? 5.0).toFixed(1)}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: brand.textMuted }}>•</Text>
+                      <Text style={{ fontSize: 12, color: brand.textMuted, textTransform: "capitalize" }}>
+                        {pendingRequest.rideType || "Standard"} • {pendingRequest.paymentMethod || "Cash"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Route: Pickup & Destination */}
+                <View style={{ marginTop: 10, gap: 6 }}>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                    <Ionicons name="radio-button-on" size={16} color="#16A34A" style={{ marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#16A34A" }}>PICKUP</Text>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: brand.text }} numberOfLines={2}>
+                        {pendingRequest.pickupAddress || "Passenger pickup point"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                    <Ionicons name="location" size={16} color="#EA580C" style={{ marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#EA580C" }}>DESTINATION</Text>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: brand.text }} numberOfLines={2}>
+                        {pendingRequest.dropoffAddress || "Passenger destination"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Trip Distance & Approach Distance */}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, borderColor: "#FED7AA" }}>
+                  <View>
+                    <Text style={{ fontSize: 10, color: brand.textMuted, fontWeight: "600" }}>APPROACH DISTANCE</Text>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: brand.text }}>
+                      {(pendingRequest.distanceKm ?? 1.2).toFixed(1)} km to pickup
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={{ fontSize: 10, color: brand.textMuted, fontWeight: "600" }}>TOTAL TRIP DISTANCE</Text>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: brand.text }}>
+                      {pendingRequest.tripDistanceKm ? `${pendingRequest.tripDistanceKm.toFixed(1)} km` : "Direct Route"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+                  <TouchableOpacity
+                    onPress={() => void handleAcceptRequest(pendingRequest.id)}
+                    style={[styles.actionBtn, { backgroundColor: "#16A34A", flex: 1.4 }]}
+                  >
+                    <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>ACCEPT RIDE</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => void handleDeclineRequest(pendingRequest.id)}
+                    style={[styles.actionBtn, { backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: "#CBD5E1", flex: 1 }]}
+                  >
+                    <Text style={[styles.actionBtnText, { color: "#64748B" }]}>DECLINE</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </AppCard>
-          ) : null}
+            )}
 
-          <AppCard tone="muted">
-            <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Earnings & Operations</Text>
-            <Text style={{ marginTop: 6, fontSize: 12, color: brand.textMuted }}>
-              View daily totals, weekly trend, and trip-by-trip earnings breakdown.
-            </Text>
-            <View style={{ marginTop: 10 }}>
-              <AppButton
-                label="Open Earnings"
-                variant="outline"
-                onPress={() => router.push("/driver-earnings" as never)}
-              />
+            {/* Active Trip Navigation HUD */}
+            {activeTrip && (
+              <View
+                style={[
+                  styles.incomingCard,
+                  {
+                    backgroundColor: brand.surface,
+                    borderColor: brand.primary,
+                    borderWidth: 2,
+                  },
+                ]}
+              >
+                {/* Header Status & Fare */}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <View style={[styles.statusDot, { backgroundColor: isAssigned ? "#3B82F6" : isArriving ? "#F97316" : "#16A34A" }]} />
+                    <Text style={{ fontSize: 16, fontWeight: "900", color: brand.text }}>
+                      {isAssigned ? "Head to Pickup" : isArriving ? "Passenger Pickup" : "Trip in Progress"}
+                    </Text>
+                  </View>
+                  <AppBadge
+                    label={`${activeTrip.fare?.currency || "ZMW"} ${(activeTrip.fare?.total ?? 0).toFixed(2)}`}
+                    tone="primary"
+                  />
+                </View>
+
+                {/* Ride Seeker Profile & Direct Communication Bar */}
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: brand.surfaceMuted, borderRadius: 14 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                      <Ionicons name="person" size={24} color="#1D4ED8" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: "800", color: brand.text }} numberOfLines={1}>
+                        {(activeTrip as any).riderName || "Service Seeker"}
+                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+                        <Ionicons name="star" size={13} color="#F59E0B" />
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: brand.text }}>
+                          {((activeTrip as any).riderRating ?? 5.0).toFixed(1)}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: brand.textMuted }}>•</Text>
+                        <Text style={{ fontSize: 11, color: brand.textMuted, fontWeight: "600" }}>
+                          {activeTrip.paymentMethod || "CASH"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Call & Chat Action Icons */}
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const phone = (activeTrip as any).riderPhone || "+260971000001";
+                        void Linking.openURL(`tel:${phone}`);
+                      }}
+                      style={{
+                        width: 42,
+                        height: 42,
+                        borderRadius: 21,
+                        backgroundColor: "#FFF7ED",
+                        borderWidth: 1,
+                        borderColor: "#FED7AA",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="call" size={20} color="#EA580C" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        router.push("/(tabs)/chat" as never);
+                      }}
+                      style={{
+                        width: 42,
+                        height: 42,
+                        borderRadius: 21,
+                        backgroundColor: "#EFF6FF",
+                        borderWidth: 1,
+                        borderColor: "#BFDBFE",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="chatbubble-ellipses" size={20} color="#2563EB" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Route Points */}
+                <View style={{ marginTop: 12, gap: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                    <Ionicons name="radio-button-on" size={16} color="#16A34A" style={{ marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#16A34A" }}>PICKUP</Text>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: brand.text }} numberOfLines={2}>
+                        {activeTrip.pickup?.address || "Passenger pickup point"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                    <Ionicons name="location" size={16} color="#EA580C" style={{ marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#EA580C" }}>DESTINATION</Text>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: brand.text }} numberOfLines={2}>
+                        {activeTrip.dropoff?.address || "Passenger destination"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Distance & Trip Specs Banner */}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: brand.surfaceMuted, borderRadius: 10 }}>
+                  <View>
+                    <Text style={{ fontSize: 10, color: brand.textMuted, fontWeight: "600" }}>TOTAL DISTANCE</Text>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: brand.text }}>
+                      {activeTrip.fare?.distanceMeters ? `${(activeTrip.fare.distanceMeters / 1000).toFixed(1)} km` : "In Transit"}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={{ fontSize: 10, color: brand.textMuted, fontWeight: "600" }}>RIDE TYPE</Text>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: brand.text, textTransform: "capitalize" }}>
+                      {activeTrip.fare?.rideType || "Standard"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* PIN Verification Input */}
+                {activeTrip.state === "PIN_VERIFICATION" && (
+                  <View style={{ marginTop: 12, padding: 12, backgroundColor: "#FEF08A", borderRadius: 12 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: "#854D0E", marginBottom: 6 }}>
+                      Ask passenger for their 4-digit PIN:
+                    </Text>
+                    <TextInput
+                      placeholder="e.g. 1234"
+                      value={passengerPin}
+                      onChangeText={setPassengerPin}
+                      keyboardType="numeric"
+                      maxLength={4}
+                      style={[styles.pinInput, { backgroundColor: "#FFFFFF", borderColor: "#EAB308", color: "#000000" }]}
+                    />
+                  </View>
+                )}
+
+                {/* Progression Action Button */}
+                <View style={{ marginTop: 14 }}>
+                  {isAssigned && (
+                    <AppButton
+                      label="📍 Arrived at Pickup"
+                      variant="secondary"
+                      loading={activeAction === "arrived"}
+                      onPress={async () => {
+                        try {
+                          setActiveAction("arrived");
+                          await driverArrived(activeTrip.id);
+                          await refreshDashboard();
+                        } catch (err) {
+                          Alert.alert("Arrived failed", err instanceof Error ? err.message : "Try again");
+                        } finally {
+                          setActiveAction(null);
+                        }
+                      }}
+                    />
+                  )}
+
+                  {isArriving && (
+                    <AppButton
+                      label="▶️ Start Trip"
+                      variant="primary"
+                      loading={activeAction === "start"}
+                      onPress={async () => {
+                        try {
+                          setActiveAction("start");
+                          await startTrip(activeTrip.id, { pin: passengerPin.trim() || undefined });
+                          await refreshDashboard();
+                          setPassengerPin("");
+                        } catch (err) {
+                          Alert.alert("Start failed", err instanceof Error ? err.message : "Try again");
+                        } finally {
+                          setActiveAction(null);
+                        }
+                      }}
+                    />
+                  )}
+
+                  {isInProgress && (
+                    <AppButton
+                      label={`🏁 Complete Trip & Collect K${(activeTrip.fare?.total ?? 0).toFixed(0)}`}
+                      variant="success"
+                      loading={activeAction === "complete"}
+                      onPress={async () => {
+                        try {
+                          setActiveAction("complete");
+                          await completeTrip(activeTrip.id);
+                          await refreshDashboard();
+                          Alert.alert("Trip Completed!", `Fare of K${(activeTrip.fare?.total ?? 0).toFixed(0)} added to daily wallet.`);
+                        } catch (err) {
+                          Alert.alert("Complete failed", err instanceof Error ? err.message : "Try again");
+                        } finally {
+                          setActiveAction(null);
+                        }
+                      }}
+                    />
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Quick Navigation Cards */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => router.push("/driver-earnings")}
+                style={[styles.quickCard, { backgroundColor: brand.surface, borderColor: brand.border }]}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickIconWrap, { backgroundColor: "#EFF6FF" }]}>
+                  <Ionicons name="wallet" size={20} color="#2563EB" />
+                </View>
+                <Text style={[styles.quickTitle, { color: brand.text }]}>Earnings</Text>
+                <Text style={styles.quickSub}>Daily & Weekly</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => router.push("/driver-profile")}
+                style={[styles.quickCard, { backgroundColor: brand.surface, borderColor: brand.border }]}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickIconWrap, { backgroundColor: "#F0FDF4" }]}>
+                  <Ionicons name="shield-checkmark" size={20} color="#16A34A" />
+                </View>
+                <Text style={[styles.quickTitle, { color: brand.text }]}>Profile</Text>
+                <Text style={styles.quickSub}>Vehicle & Documents</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => router.push("/ride-history")}
+                style={[styles.quickCard, { backgroundColor: brand.surface, borderColor: brand.border }]}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickIconWrap, { backgroundColor: "#FFF7ED" }]}>
+                  <Ionicons name="time" size={20} color="#EA580C" />
+                </View>
+                <Text style={[styles.quickTitle, { color: brand.text }]}>Trips</Text>
+                <Text style={styles.quickSub}>Activity Logs</Text>
+              </TouchableOpacity>
             </View>
-          </AppCard>
 
-          {isOfflineMode ? (
-            <AppCard tone="muted">
-              <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                Offline mode active. Dispatch updates are syncing locally on this device.
-              </Text>
-            </AppCard>
-          ) : null}
+          </View>
+        </ScrollView>
 
-          {dashboardError ? (
-            <AppCard tone="muted">
-              <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                Dispatch backend issue: {dashboardError}
-              </Text>
-            </AppCard>
-          ) : null}
-        </View>
-      </ScrollView>
+        {/* Reusable Bottom Navigation Bar */}
+        <DriverNavBar />
+      </View>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  headerCard: {
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1.5,
+    ...shadows.md,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  driverAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#3B82F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  driverName: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  headerStatsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.12)",
+  },
+  statBox: {
+    flex: 1,
+    alignItems: "center",
+  },
+  statLabel: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  statValue: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+  },
+  powerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 18,
+    ...shadows.lg,
+    elevation: 8,
+  },
+  powerButtonText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  mapContainer: {
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 1,
+    ...shadows.md,
+  },
+  locationFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  locationFooterText: {
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+  radiusCard: {
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    ...shadows.sm,
+  },
+  radiusTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  radiusPill: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radiusPillText: {
+    fontSize: 12,
+  },
+  incomingCard: {
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1.5,
+    ...shadows.md,
+  },
+  pulsingBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#FFEDD5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 13,
+    borderRadius: 12,
+  },
+  actionBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  pinInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+    letterSpacing: 4,
+  },
+  quickCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    ...shadows.sm,
+  },
+  quickIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  quickTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  quickSub: {
+    fontSize: 10,
+    color: "#94A3B8",
+    marginTop: 2,
+  },
+});

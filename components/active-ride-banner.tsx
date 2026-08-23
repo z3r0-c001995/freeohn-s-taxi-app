@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, Platform, Text, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useAppStore } from "@/lib/store";
@@ -12,6 +12,7 @@ import { useBrandTheme } from "@/hooks/use-brand-theme";
  */
 export function ActiveRideBanner() {
   const router = useRouter();
+  const pathname = usePathname();
   const brand = useBrandTheme();
   const { activeRide } = useAppStore();
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -34,7 +35,16 @@ export function ActiveRideBanner() {
     return () => loop.stop();
   }, [isActive, pulseAnim]);
 
-  if (!isActive || !activeRide) return null;
+  // Never show floating banner if user is already on trip screen, driver dashboard, or payment screen
+  if (
+    !isActive ||
+    !activeRide ||
+    pathname?.startsWith("/trip") ||
+    pathname?.startsWith("/driver-dashboard") ||
+    pathname === "/payment"
+  ) {
+    return null;
+  }
 
   const label =
     activeRide.status === "requested"

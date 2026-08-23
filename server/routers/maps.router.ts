@@ -43,6 +43,30 @@ type NominatimReverseResponse = {
   display_name?: string;
 };
 
+type SerpApiLocalPlace = {
+  position?: number;
+  title?: string;
+  address?: string;
+  place_id?: string;
+  gps_coordinates?: {
+    latitude?: number;
+    longitude?: number;
+  };
+  description?: string;
+};
+
+type SerpApiResponse = {
+  local_results?: {
+    places?: SerpApiLocalPlace[];
+  };
+  local_map?: {
+    gps_coordinates?: {
+      latitude?: number;
+      longitude?: number;
+    };
+  };
+};
+
 type CacheEntry = {
   expiresAt: number;
   value: unknown;
@@ -88,6 +112,11 @@ const fallbackPlaces = [
   { name: "Ndola City Centre", locality: "Ndola", region: "Copperbelt", country: "Zambia", lat: -12.9587, lng: 28.6366 },
   { name: "Livingstone Town Centre", locality: "Livingstone", region: "Southern", country: "Zambia", lat: -17.8419, lng: 25.8544 },
 ];
+
+function getSerpApiKey(): string | null {
+  const key = process.env.SERPAPI_API_KEY?.trim();
+  return key || null;
+}
 
 function getOrsApiKey(): string | null {
   const key = process.env.ORS_API_KEY?.trim();
@@ -389,6 +418,86 @@ async function fetchNominatimAutocomplete(query: string, location?: { lat: numbe
   }
 }
 
+async function fetchSerpApiPlaces(query: string, location?: { lat: number; lng: number }) {
+  const apiKey = getSerpApiKey();
+  if (!apiKey) return [];
+
+  try {
+    const isZambiaSpecified = query.toLowerCase().includes("zambia") || query.toLowerCase().includes("lusaka") || query.toLowerCase().includes("kitwe");
+    const searchQuery = isZambiaSpecified ? query : `${query}, Zambia`;
+
+    const params = new URLSearchParams({
+      engine: "google",
+      q: searchQuery,
+      location: "Zambia",
+      gl: "zm",
+      hl: "en",
+      api_key: apiKey,
+    });
+
+    if (location) {
+      params.set("lat", String(location.lat));
+      params.set("lon", String(location.lng));
+    }
+
+    const response = await axios.get<SerpApiResponse>(`https://serpapi.com/search.json?${params}`, {
+      timeout: 4500,
+    });
+
+    const places = response.data?.local_results?.places ?? [];
+    if (places.length > 0) {
+      return places
+        .filter((p) => typeof p.gps_coordinates?.latitude === "number" && typeof p.gps_coordinates?.longitude === "number")
+        .map((place, index) => {
+          const lat = place.gps_coordinates!.latitude!;
+          const lng = place.gps_coordinates!.longitude!;
+          const mainText = place.title?.trim() || query;
+          const secondaryText = place.address?.trim() || "Zambia";
+          const fullAddress = `${mainText}${place.address ? `, ${place.address}` : ", Zambia"}`;
+
+          return {
+            place_id: place.place_id || `serp_${index}_${lat}_${lng}`,
+            description: fullAddress,
+            structured_formatting: {
+              main_text: mainText,
+              secondary_text: secondaryText,
+            },
+            geometry: {
+              location: { lat, lng },
+            },
+            formatted_address: fullAddress,
+          };
+        });
+    }
+
+    if (response.data?.local_map?.gps_coordinates?.latitude && response.data?.local_map?.gps_coordinates?.longitude) {
+      const lat = response.data.local_map.gps_coordinates.latitude;
+      const lng = response.data.local_map.gps_coordinates.longitude;
+      return [
+        {
+          place_id: `serp_map_${lat}_${lng}`,
+          description: `${query}, Zambia`,
+          structured_formatting: {
+            main_text: query,
+            secondary_text: "Zambia",
+          },
+          geometry: {
+            location: { lat, lng },
+          },
+          formatted_address: `${query}, Zambia`,
+        },
+      ];
+    }
+
+    return [];
+  } catch (error) {
+    logger.warn("maps.serpapi.autocomplete.failed", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    return [];
+  }
+}
+
 function fallbackReverseGeocode(input: { lat: number; lng: number }) {
   const nearest = fallbackPlaces
     .map((place) => ({
@@ -473,6 +582,15 @@ export const mapsRouter = router({
       const cached = getCached<ReturnType<typeof fallbackPlacesAutocomplete>>(cacheKey);
       if (cached) {
         return cached;
+      }
+
+      const serpApiKey = getSerpApiKey();
+      if (serpApiKey) {
+        const serpResults = await fetchSerpApiPlaces(query, input.location);
+        if (serpResults.length > 0) {
+          setCached(cacheKey, serpResults);
+          return serpResults;
+        }
       }
 
       const apiKey = getOrsApiKey();

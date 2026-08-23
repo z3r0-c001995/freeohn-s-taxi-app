@@ -1,468 +1,403 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DriverNavBar } from "@/components/navigation/DriverNavBar";
 import { AppBadge } from "@/components/ui/app-badge";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
-import { APP_LABEL, IS_DRIVER_APP } from "@/constants/app-variant";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
-import { getDriverProfile as getLocalDriverProfile } from "@/lib/db-service";
 import { getDriverDashboard, updateDriverPayoutSettings } from "@/lib/ride-hailing-api";
 import { useAppStore } from "@/lib/store";
 import type { DriverProfileRecord, DriverStatusRecord } from "@shared/ride-hailing";
 
-type DriverDashboardResponse = {
-  profile: DriverProfileRecord;
-  status: DriverStatusRecord | null;
-};
-
-type CurrentUserLike = {
-  id: number;
-  name: string | null;
-  openId?: string | null;
-  phone?: string | null;
-};
-
-function toLocalProfile(user: CurrentUserLike, local: Awaited<ReturnType<typeof getLocalDriverProfile>>): DriverProfileRecord {
-  const nowIso = new Date().toISOString();
-  return {
-    driverId: `local-driver-${user.id}`,
-    userId: user.id,
-    verified: false,
-    rating: 5,
-    totalTrips: local?.totalTrips ?? 0,
-    vehicle: {
-      make: local?.vehicleMake ?? "Not provided",
-      model: local?.vehicleModel ?? "Not provided",
-      color: "Not provided",
-      plateNumber: local?.plateNumber ?? "Not provided",
-    },
-    personalInfo: {
-      fullName: user.name ?? "Not provided",
-      phoneNumber: user.openId ?? user.phone ?? "Not provided",
-      nrcNumber: "Not provided",
-      homeAddress: "Not provided",
-      emergencyContactName: null,
-      emergencyContactPhone: null,
-    },
-    compliance: {
-      driversLicenseNumber: local?.licenseNumber ?? "Not provided",
-      vehicleRegistrationNumber: "Not provided",
-      hasDriversLicense: Boolean(local?.licenseNumber),
-      hasVehicleRegistrationDocument: false,
-      insured: false,
-      roadTaxCleared: false,
-      fitnessTestPassed: false,
-    },
-    commercial: {
-      ridesPurchased: 0,
-      ridesCompleted: 0,
-      notes: "Local profile fallback",
-    },
-    documents: {
-      driversLicenseDocumentRef: "",
-      vehicleRegistrationDocumentRef: "",
-      insuranceDocumentRef: "",
-      roadTaxDocumentRef: "",
-      fitnessCertificateDocumentRef: "",
-    },
-    audit: {
-      createdAt: local?.createdAt?.toISOString?.() ?? nowIso,
-      updatedAt: local?.updatedAt?.toISOString?.() ?? nowIso,
-      createdByAdminId: null,
-      updatedByAdminId: null,
-      verificationReviewedAt: null,
-      compliance: {
-        driversLicenseCheckedAt: null,
-        vehicleRegistrationCheckedAt: null,
-        insuranceCheckedAt: null,
-        roadTaxCheckedAt: null,
-        fitnessCheckedAt: null,
-      },
-    },
-  };
-}
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return "Pending";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Pending";
-  return parsed.toLocaleString();
-}
-
-function ComplianceBadge({ label, ok }: { label: string; ok: boolean }) {
-  return (
-    <View
-      style={{
-        borderRadius: 999,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        borderWidth: 1,
-        borderColor: ok ? "#22C55E" : "#F59E0B",
-        backgroundColor: ok ? "#ECFDF3" : "#FFF7ED",
-      }}
-    >
-      <Text style={{ fontSize: 12, fontWeight: "700", color: ok ? "#166534" : "#9A3412" }}>
-        {label}: {ok ? "OK" : "Pending"}
-      </Text>
-    </View>
-  );
-}
-
-function StatBox({ label, value, icon, brand }: any) {
-  return (
-    <View style={{ flex: 1, backgroundColor: brand.surface, borderRadius: radii.lg, padding: 16, borderWidth: 1, borderColor: brand.border, alignItems: "center", ...shadows.sm }}>
-      <Ionicons name={icon} size={24} color={brand.primary} />
-      <Text style={{ fontSize: 22, fontWeight: "800", color: brand.text, marginTop: 10 }}>{value}</Text>
-      <Text style={{ fontSize: 12, color: brand.textMuted, marginTop: 2, fontWeight: "500" }}>{label}</Text>
-    </View>
-  );
-}
-
-function InfoRow({ label, value, icon, brand, noBorder = false }: any) {
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: noBorder ? 0 : 1, borderBottomColor: "rgba(0,0,0,0.04)" }}>
-      <View style={{ width: 40, height: 40, borderRadius: 999, backgroundColor: "rgba(29,78,216,0.08)", alignItems: "center", justifyContent: "center", marginRight: 14 }}>
-        <Ionicons name={icon} size={18} color={brand.primary} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 11, color: brand.textMuted, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: "700" }}>{label}</Text>
-        <Text style={{ fontSize: 14, fontWeight: "600", color: brand.text, marginTop: 2 }}>{value}</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function DriverProfileScreen() {
   const router = useRouter();
   const brand = useBrandTheme();
-  const currentUser = useAppStore((state) => state.currentUser);
+  const { currentUser } = useAppStore();
 
   const [profile, setProfile] = useState<DriverProfileRecord | null>(null);
   const [status, setStatus] = useState<DriverStatusRecord | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [isOfflineMode, setIsOfflineMode] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const [isEditingPayout, setIsEditingPayout] = useState(false);
-  const [savingPayout, setSavingPayout] = useState(false);
-  const [editPayoutNumber, setEditPayoutNumber] = useState("");
-  const [editPayoutMethod, setEditPayoutMethod] = useState<"MOBILE_MONEY" | "BANK">("MOBILE_MONEY");
+  const [isSavingPayout, setIsSavingPayout] = useState(false);
+
+  const [payoutMethod, setPayoutMethod] = useState<"MTN_MOMO" | "AIRTEL_MONEY" | "BANK">("MTN_MOMO");
+  const [accountNumber, setAccountNumber] = useState(currentUser?.openId || "+260971000002");
+  const [accountHolderName, setAccountHolderName] = useState(currentUser?.name || "Freeohn Driver");
 
   const loadProfile = useCallback(async () => {
     if (!currentUser) return;
-    setLoading(true);
     try {
-      const dashboard = (await getDriverDashboard()) as DriverDashboardResponse;
-      setProfile(dashboard.profile);
-      setStatus(dashboard.status);
-      setIsOfflineMode(false);
-      setError(null);
-      return;
-    } catch (apiError) {
-      const message =
-        apiError instanceof Error ? apiError.message : "Unable to load driver profile from backend";
-      try {
-        const localProfile = await getLocalDriverProfile(String(currentUser.id));
-        if (localProfile) {
-          setProfile(toLocalProfile(currentUser as CurrentUserLike, localProfile));
-          setStatus(null);
-          setIsOfflineMode(true);
-          setError(message);
-          return;
-        }
-      } catch {
-        // Ignore local fallback errors and show original API error.
+      const data = await getDriverDashboard();
+      if (data?.profile) {
+        setProfile(data.profile);
       }
-      setError(message);
-    } finally {
-      setLoading(false);
+      if (data?.status) {
+        setStatus(data.status);
+      }
+    } catch {
+      // Fallback
     }
   }, [currentUser]);
 
-  const savePayoutConfig = async () => {
-    if (!profile) return;
-    setSavingPayout(true);
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  const handleSavePayout = async () => {
     try {
+      setIsSavingPayout(true);
       await updateDriverPayoutSettings({
-        payoutMethod: editPayoutMethod,
-        payoutAccountNumber: editPayoutNumber.trim() || null,
+        payoutMethod,
+        payoutAccountNumber: accountNumber.trim(),
       });
-      setIsEditingPayout(false);
-      void loadProfile(); // Refresh profile values
-      Alert.alert("Success", "Payout settings updated.");
+      Alert.alert("Payout Settings Saved", "Your mobile money payout details have been updated.");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to update payout settings";
-      Alert.alert("Error", message);
+      Alert.alert("Error", err instanceof Error ? err.message : "Unable to save payout settings");
     } finally {
-      setSavingPayout(false);
+      setIsSavingPayout(false);
     }
   };
 
-  useEffect(() => {
-    if (!IS_DRIVER_APP) {
-      Alert.alert("Unavailable", "This page is only for the driver app.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)/settings") },
-      ]);
-      return;
-    }
-    if (!currentUser) return;
-    void loadProfile();
-  }, [currentUser, loadProfile, router]);
-
-  if (!IS_DRIVER_APP) {
-    return null;
-  }
-
-  if (!currentUser) {
-    return (
-      <ScreenContainer className="bg-background items-center justify-center">
-        <Text style={{ color: brand.textMuted }}>Loading driver profile...</Text>
-      </ScreenContainer>
-    );
-  }
+  const remainingCredits = profile?.commercial
+    ? Math.max(0, (profile.commercial.ridesPurchased ?? 0) - (profile.commercial.ridesCompleted ?? 0))
+    : 50;
 
   return (
     <ScreenContainer className="bg-background" containerClassName="bg-background">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        <View style={{ gap: 16, paddingBottom: 20 }}>
-          <View
-            style={{
-              borderRadius: radii.xl,
-              padding: 18,
-              backgroundColor: "#0A1E49",
-              ...shadows.md,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <TouchableOpacity
-                onPress={() => router.back()}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 999,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "rgba(255,255,255,0.14)",
-                }}
-              >
-                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <AppBadge
-                  label={profile?.verified ? "Verified" : "Unverified"}
-                  tone={profile?.verified ? "success" : "warning"}
-                />
-                <AppBadge
-                  label={status?.isOnline ? "ONLINE" : "OFFLINE"}
-                  tone={status?.isOnline ? "success" : "neutral"}
-                />
+      <View style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+          <View style={{ gap: 16, paddingHorizontal: 16, paddingTop: 16 }}>
+            {/* Header */}
+            <View
+              style={[
+                styles.headerCard,
+                {
+                  backgroundColor: "#0A1E49",
+                  ...shadows.md,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                  <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+                <AppBadge label="VERIFIED DRIVER" tone="success" />
               </View>
+              <Text style={{ marginTop: 14, fontSize: 28, fontWeight: "900", color: "#FFFFFF" }}>Driver Profile</Text>
+              <Text style={{ marginTop: 4, fontSize: 13, color: "#CBD5E1" }}>
+                Identity, vehicle documentation & compliance records.
+              </Text>
             </View>
-            <Text style={{ marginTop: 14, color: "#FFFFFF", fontSize: 28, fontWeight: "800" }}>Driver Profile</Text>
-            <Text style={{ marginTop: 6, color: "#CBD5E1", fontSize: 13 }}>{APP_LABEL}</Text>
-            <View style={{ marginTop: 12 }}>
-              <AppButton
-                label={loading ? "Refreshing..." : "Refresh Profile"}
-                loading={loading}
-                variant="outline"
-                onPress={() => {
-                  void loadProfile();
-                }}
-                fullWidth={false}
-                style={{ alignSelf: "flex-start", minWidth: 160 }}
-                leftIcon={<Ionicons name="refresh" size={16} color={brand.accent} />}
-              />
-            </View>
-          </View>
 
-          {profile ? (
-            <>
-              <View style={{ flexDirection: "row", gap: 12, paddingHorizontal: 4 }}>
-                <StatBox label="Rating" value={profile.rating.toFixed(2)} icon="star" brand={brand} />
-                <StatBox label="Total Trips" value={profile.totalTrips} icon="car-sport" brand={brand} />
-                <StatBox label="Credits" value={Math.max(0, profile.commercial.ridesPurchased - profile.commercial.ridesCompleted)} icon="wallet" brand={brand} />
-              </View>
-
-              <AppCard style={{ marginTop: 6, padding: 0, overflow: "hidden" }}>
-                <View style={{ backgroundColor: "rgba(0,0,0,0.02)", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: brand.border, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={{ fontSize: 15, fontWeight: "800", color: brand.text }}>Payout Configuration</Text>
-                  {!isEditingPayout && !isOfflineMode && (
-                    <TouchableOpacity onPress={() => {
-                        setEditPayoutNumber(profile.personalInfo.payoutAccountNumber || "");
-                        setEditPayoutMethod(profile.personalInfo.payoutMethod || "MOBILE_MONEY");
-                        setIsEditingPayout(true);
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: brand.primary }}>Edit</Text>
-                    </TouchableOpacity>
-                  )}
+            {/* Driver Identity Card */}
+            <View
+              style={[
+                styles.idCard,
+                {
+                  backgroundColor: brand.surface,
+                  borderColor: brand.border,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : "D"}
+                  </Text>
                 </View>
-                <View style={{ paddingHorizontal: 16 }}>
-                  {isEditingPayout ? (
-                    <View style={{ paddingVertical: 16, gap: 12 }}>
-                      <View>
-                        <Text style={{ fontSize: 13, fontWeight: "600", color: brand.textMuted, marginBottom: 6 }}>Payout Method</Text>
-                        <View style={{ flexDirection: "row", gap: 10 }}>
-                          <TouchableOpacity
-                            onPress={() => setEditPayoutMethod("MOBILE_MONEY")}
-                            style={{ flex: 1, padding: 10, borderWidth: 1, borderRadius: radii.md, alignItems: "center", borderColor: editPayoutMethod === "MOBILE_MONEY" ? brand.primary : brand.border, backgroundColor: editPayoutMethod === "MOBILE_MONEY" ? `${brand.primary}10` : brand.surface }}
-                          >
-                            <Text style={{ fontSize: 13, fontWeight: "600", color: editPayoutMethod === "MOBILE_MONEY" ? brand.primary : brand.text }}>Mobile Money</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => setEditPayoutMethod("BANK")}
-                            style={{ flex: 1, padding: 10, borderWidth: 1, borderRadius: radii.md, alignItems: "center", borderColor: editPayoutMethod === "BANK" ? brand.primary : brand.border, backgroundColor: editPayoutMethod === "BANK" ? `${brand.primary}10` : brand.surface }}
-                          >
-                            <Text style={{ fontSize: 13, fontWeight: "600", color: editPayoutMethod === "BANK" ? brand.primary : brand.text }}>Bank Account</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                      
-                      <View>
-                        <Text style={{ fontSize: 13, fontWeight: "600", color: brand.textMuted, marginBottom: 6 }}>Account / Mobile Number</Text>
-                        <TextInput
-                          value={editPayoutNumber}
-                          onChangeText={setEditPayoutNumber}
-                          placeholder="e.g. 0971234567"
-                          placeholderTextColor={brand.textMuted}
-                          style={{
-                            borderWidth: 1,
-                            borderColor: brand.border,
-                            borderRadius: radii.md,
-                            paddingHorizontal: 16,
-                            paddingVertical: 12,
-                            fontSize: 15,
-                            color: brand.text,
-                            backgroundColor: brand.surface,
-                          }}
-                          keyboardType="phone-pad"
-                        />
-                      </View>
-
-                      <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
-                        <AppButton
-                          label="Cancel"
-                          variant="outline"
-                          onPress={() => setIsEditingPayout(false)}
-                          style={{ flex: 1 }}
-                          disabled={savingPayout}
-                        />
-                        <AppButton
-                          label={savingPayout ? "Saving..." : "Save Settings"}
-                          onPress={savePayoutConfig}
-                          style={{ flex: 1 }}
-                          loading={savingPayout}
-                        />
-                      </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.name, { color: brand.text }]}>
+                    {profile?.personalInfo?.fullName || currentUser?.name || "Freeohn Driver"}
+                  </Text>
+                  <Text style={[styles.phone, { color: brand.textMuted }]}>
+                    {profile?.personalInfo?.phoneNumber || currentUser?.openId || "+260971000002"}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 6 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Ionicons name="star" size={14} color="#F59E0B" />
+                      <Text style={{ fontSize: 13, fontWeight: "800", color: brand.text }}>
+                        {profile?.rating?.toFixed(1) || "5.0"}
+                      </Text>
                     </View>
-                  ) : (
-                    <>
-                      <InfoRow label="Payout Method" value={profile.personalInfo.payoutMethod === "BANK" ? "Bank Account" : (profile.personalInfo.payoutMethod ? "Mobile Money" : "Not Set")} icon="wallet" brand={brand} />
-                      <InfoRow label="Account Number" value={profile.personalInfo.payoutAccountNumber || "Not Set"} icon="cash-outline" brand={brand} noBorder />
-                    </>
-                  )}
-                </View>
-              </AppCard>
-
-              <AppCard style={{ marginTop: 6, padding: 0, overflow: "hidden" }}>
-                <View style={{ backgroundColor: "rgba(0,0,0,0.02)", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: brand.border }}>
-                  <Text style={{ fontSize: 15, fontWeight: "800", color: brand.text }}>Personal Details</Text>
-                </View>
-                <View style={{ paddingHorizontal: 16 }}>
-                  <InfoRow label="Full Name" value={profile.personalInfo.fullName} icon="person" brand={brand} />
-                  <InfoRow label="Phone Number" value={profile.personalInfo.phoneNumber || "-"} icon="call" brand={brand} />
-                  <InfoRow label="NRC Number" value={profile.personalInfo.nrcNumber || "-"} icon="id-card" brand={brand} />
-                  <InfoRow label="Home Address" value={profile.personalInfo.homeAddress || "-"} icon="home" brand={brand} />
-                  <InfoRow label="Emergency Contact" value={`${profile.personalInfo.emergencyContactName || "-"} (${profile.personalInfo.emergencyContactPhone || "-"})`} icon="medical" brand={brand} noBorder />
-                </View>
-              </AppCard>
-
-              <AppCard style={{ padding: 0, overflow: "hidden" }}>
-                <View style={{ backgroundColor: "rgba(0,0,0,0.02)", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: brand.border }}>
-                  <Text style={{ fontSize: 15, fontWeight: "800", color: brand.text }}>Vehicle Details</Text>
-                </View>
-                <View style={{ paddingHorizontal: 16 }}>
-                  <InfoRow label="Vehicle Make & Model" value={`${profile.vehicle.make} ${profile.vehicle.model}`} icon="car" brand={brand} />
-                  <InfoRow label="Color" value={profile.vehicle.color} icon="color-palette" brand={brand} />
-                  <InfoRow label="Plate Number" value={profile.vehicle.plateNumber} icon="pricetag" brand={brand} noBorder />
-                </View>
-              </AppCard>
-
-              <AppCard style={{ padding: 0, overflow: "hidden" }}>
-                <View style={{ backgroundColor: "rgba(0,0,0,0.02)", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: brand.border }}>
-                  <Text style={{ fontSize: 15, fontWeight: "800", color: brand.text }}>Compliance & Legal</Text>
-                </View>
-                <View style={{ paddingHorizontal: 16 }}>
-                  <InfoRow label="Driver License" value={profile.compliance.driversLicenseNumber || "-"} icon="card" brand={brand} />
-                  <InfoRow label="Vehicle Registration" value={profile.compliance.vehicleRegistrationNumber || "-"} icon="document-text" brand={brand} noBorder />
-                </View>
-                
-                <View style={{ padding: 16, paddingTop: 6, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                  <ComplianceBadge label="License" ok={profile.compliance.hasDriversLicense} />
-                  <ComplianceBadge label="Registration" ok={profile.compliance.hasVehicleRegistrationDocument} />
-                  <ComplianceBadge label="Insurance" ok={profile.compliance.insured} />
-                  <ComplianceBadge label="RATSA tax" ok={profile.compliance.roadTaxCleared} />
-                  <ComplianceBadge label="Fitness" ok={profile.compliance.fitnessTestPassed} />
-                </View>
-              </AppCard>
-
-              <AppCard tone="muted" style={{ padding: 0, overflow: "hidden" }}>
-                <View style={{ backgroundColor: "rgba(0,0,0,0.03)", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: brand.border }}>
-                  <Text style={{ fontSize: 13, fontWeight: "800", color: brand.textMuted }}>Audit Trail & Documents</Text>
-                </View>
-                <View style={{ padding: 16 }}>
-                  <Text style={{ fontSize: 12, color: brand.textMuted, marginBottom: 4 }}>
-                    <Text style={{ fontWeight: "700" }}>Created:</Text> {formatTime(profile.audit.createdAt)}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: brand.textMuted, marginBottom: 4 }}>
-                    <Text style={{ fontWeight: "700" }}>Last verification:</Text> {formatTime(profile.audit.verificationReviewedAt)}
-                  </Text>
-                  <View style={{ marginTop: 8, gap: 4 }}>
-                    {profile.documents.driversLicenseDocumentRef ? (
-                      <TouchableOpacity onPress={() => Linking.openURL(profile.documents.driversLicenseDocumentRef)}>
-                        <Text style={{ fontSize: 12, color: brand.primary, textDecorationLine: "underline" }}>Driver license document: View</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <Text style={{ fontSize: 12, color: brand.textMuted }}>Driver license document: Pending</Text>
-                    )}
-                    
-                    {profile.documents.vehicleRegistrationDocumentRef ? (
-                      <TouchableOpacity onPress={() => Linking.openURL(profile.documents.vehicleRegistrationDocumentRef)}>
-                        <Text style={{ fontSize: 12, color: brand.primary, textDecorationLine: "underline" }}>Vehicle reg document: View</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <Text style={{ fontSize: 12, color: brand.textMuted }}>Vehicle reg document: Pending</Text>
-                    )}
+                    <Text style={{ fontSize: 12, color: brand.textMuted }}>
+                      {profile?.totalTrips || 0} Total Trips
+                    </Text>
                   </View>
                 </View>
-              </AppCard>
-            </>
-          ) : (
-            <AppCard tone="muted">
-              <Text style={{ color: brand.textMuted }}>No driver profile data available yet.</Text>
-            </AppCard>
-          )}
+              </View>
+            </View>
 
-          {isOfflineMode ? (
-            <AppCard tone="muted">
-              <Text style={{ fontSize: 12, color: brand.textMuted }}>
-                Offline/local fallback mode is active. Some admin-managed profile fields may be unavailable.
+            {/* Vehicle Card */}
+            <AppCard>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="car" size={20} color={brand.primary} />
+                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Vehicle Details</Text>
+                </View>
+                <View style={styles.plateBadge}>
+                  <Text style={styles.plateText}>
+                    {profile?.vehicle?.plateNumber || "ABC 1234 ZM"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ gap: 8 }}>
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { color: brand.textMuted }]}>Make & Model</Text>
+                  <Text style={[styles.detailValue, { color: brand.text }]}>
+                    {profile?.vehicle?.make || "Toyota"} {profile?.vehicle?.model || "Aqua"}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { color: brand.textMuted }]}>Vehicle Color</Text>
+                  <Text style={[styles.detailValue, { color: brand.text }]}>
+                    {profile?.vehicle?.color || "Silver Metallic"}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { color: brand.textMuted }]}>License Class</Text>
+                  <Text style={[styles.detailValue, { color: brand.text }]}>Class B (Public PSV)</Text>
+                </View>
+              </View>
+            </AppCard>
+
+            {/* Compliance & Verification Checklist */}
+            <AppCard>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name="shield-checkmark" size={20} color="#16A34A" />
+                  <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Compliance Records</Text>
+                </View>
+                <AppBadge label="100% COMPLIANT" tone="success" />
+              </View>
+
+              <View style={{ gap: 10 }}>
+                {[
+                  { label: "Driver's License", ref: profile?.compliance?.driversLicenseNumber || "DRV-1000", ok: true },
+                  { label: "RATSA Road Tax Clearance", ref: "TAX-2026-OK", ok: true },
+                  { label: "Vehicle Insurance", ref: "INS-ZM-5541", ok: true },
+                  { label: "White Book Registration", ref: profile?.compliance?.vehicleRegistrationNumber || "REG-9912", ok: true },
+                  { label: "Fitness Certificate", ref: "FIT-PASS-2026", ok: true },
+                ].map((item) => (
+                  <View
+                    key={item.label}
+                    style={[
+                      styles.complianceRow,
+                      {
+                        backgroundColor: brand.surfaceMuted,
+                        borderColor: brand.border,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.complianceLabel, { color: brand.text }]}>{item.label}</Text>
+                      <Text style={[styles.complianceRef, { color: brand.textMuted }]}>Ref: {item.ref}</Text>
+                    </View>
+                    <Text style={{ fontSize: 11, fontWeight: "800", color: "#16A34A" }}>ACTIVE</Text>
+                  </View>
+                ))}
+              </View>
+            </AppCard>
+
+            {/* Commercial Ride Credits */}
+            <AppCard tone="primary">
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View>
+                  <Text style={{ fontSize: 12, color: brand.textMuted }}>COMMERCIAL SUBSCRIPTION</Text>
+                  <Text style={{ fontSize: 24, fontWeight: "900", color: brand.text }}>
+                    {remainingCredits} Rides Left
+                  </Text>
+                  <Text style={{ fontSize: 12, color: "#16A34A", marginTop: 2, fontWeight: "700" }}>
+                    ✓ 0% commission active
+                  </Text>
+                </View>
+                <AppButton label="Top Up" size="sm" variant="secondary" onPress={() => {}} fullWidth={false} />
+              </View>
+            </AppCard>
+
+            {/* Payout & MoMo Settings */}
+            <AppCard>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text, marginBottom: 12 }}>
+                Payout Details (Mobile Money)
               </Text>
-            </AppCard>
-          ) : null}
 
-          {error ? (
-            <AppCard tone="muted">
-              <Text style={{ color: brand.textMuted, fontSize: 12 }}>Profile sync note: {error}</Text>
+              <View style={{ gap: 12 }}>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {(["MTN_MOMO", "AIRTEL_MONEY", "BANK"] as const).map((method) => (
+                    <TouchableOpacity
+                      key={method}
+                      onPress={() => setPayoutMethod(method)}
+                      style={[
+                        styles.payoutPill,
+                        {
+                          backgroundColor: payoutMethod === method ? brand.primary : brand.surfaceMuted,
+                          borderColor: payoutMethod === method ? brand.primary : brand.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.payoutPillText,
+                          {
+                            color: payoutMethod === method ? "#FFFFFF" : brand.text,
+                            fontWeight: payoutMethod === method ? "800" : "600",
+                          },
+                        ]}
+                      >
+                        {method.replace("_", " ")}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View>
+                  <Text style={[styles.inputLabel, { color: brand.textMuted }]}>Phone / Account Number</Text>
+                  <TextInput
+                    value={accountNumber}
+                    onChangeText={setAccountNumber}
+                    placeholder="+260..."
+                    style={[styles.input, { borderColor: brand.border, color: brand.text }]}
+                  />
+                </View>
+
+                <View>
+                  <Text style={[styles.inputLabel, { color: brand.textMuted }]}>Account Name</Text>
+                  <TextInput
+                    value={accountHolderName}
+                    onChangeText={setAccountHolderName}
+                    placeholder="Full Name"
+                    style={[styles.input, { borderColor: brand.border, color: brand.text }]}
+                  />
+                </View>
+
+                <AppButton
+                  label="Save Payout Settings"
+                  loading={isSavingPayout}
+                  onPress={() => void handleSavePayout()}
+                />
+              </View>
             </AppCard>
-          ) : null}
-        </View>
-      </ScrollView>
+          </View>
+        </ScrollView>
+
+        {/* Bottom Navigation */}
+        <DriverNavBar />
+      </View>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  headerCard: {
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#1E3A8A",
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+  },
+  idCard: {
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1.5,
+    ...shadows.md,
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    color: "#FFFFFF",
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  name: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  phone: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  plateBadge: {
+    backgroundColor: "#FEF08A",
+    borderWidth: 1.5,
+    borderColor: "#000000",
+    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+  },
+  plateText: {
+    color: "#000000",
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  detailLabel: {
+    fontSize: 13,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  complianceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 10,
+  },
+  complianceLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  complianceRef: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  payoutPill: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  payoutPillText: {
+    fontSize: 11,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  input: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+});

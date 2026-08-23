@@ -145,8 +145,9 @@ export async function getAddressFromCoordinates(
  * Validate phone number
  */
 export function validatePhoneNumber(phone: string): boolean {
-  const phoneRegex = /^[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}$/;
-  return phoneRegex.test(phone.replace(/\s/g, ""));
+  if (!phone || typeof phone !== "string") return false;
+  const digitsOnly = phone.replace(/\D/g, "");
+  return digitsOnly.length >= 7 && digitsOnly.length <= 15;
 }
 
 /**

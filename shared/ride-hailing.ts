@@ -126,7 +126,7 @@ export const rideHailingConfigSchema = z.object({
 export type RideHailingConfig = z.infer<typeof rideHailingConfigSchema>;
 
 export type FareSnapshot = {
-  currency: "USD";
+  currency: "ZMW" | "USD" | string;
   baseFare: number;
   distanceFare: number;
   timeFare: number;
