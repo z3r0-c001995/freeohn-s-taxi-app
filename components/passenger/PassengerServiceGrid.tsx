@@ -1,149 +1,197 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal } from "react-native";
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 export function PassengerServiceGrid() {
   const router = useRouter();
+  const [comingSoonModal, setComingSoonModal] = useState<{
+    visible: boolean;
+    title: string;
+    description: string;
+    icon: string;
+  }>({
+    visible: false,
+    title: "",
+    description: "",
+    icon: "clock-outline",
+  });
 
-  const handleOpenRides = () => {
-    router.push("/request-ride" as never);
+  const handleOpenRides = (serviceType: "taxi" | "moto" | "delivery") => {
+    router.push({
+      pathname: "/request-ride" as never,
+      params: { service: serviceType },
+    });
+  };
+
+  const handleComingSoon = (title: string, description: string, icon: string) => {
+    setComingSoonModal({
+      visible: true,
+      title,
+      description,
+      icon,
+    });
   };
 
   return (
     <View style={styles.container}>
-      {/* Row 1: Shops & Delivery */}
+      {/* Row 1: Taxi Hauling & Motorbike Hauling */}
       <View style={styles.row}>
-        {/* Shops Card */}
+        {/* 1. Taxi Hauling Card */}
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => router.push("/promotions" as never)}
+          onPress={() => handleOpenRides("taxi")}
           style={[styles.halfCard, { backgroundColor: "#F3F4F6" }]}
         >
           <View style={styles.cardGraphicContainer}>
-            <View style={styles.cardGraphicShadow}>
-              <MaterialCommunityIcons name="basket-fill" size={44} color="#EF4444" />
-              <MaterialCommunityIcons
-                name="egg"
-                size={22}
-                color="#FBBF24"
-                style={{ position: "absolute", left: -6, bottom: 0 }}
-              />
-            </View>
-          </View>
-          <Text style={styles.cardLabel}>Shops</Text>
-        </TouchableOpacity>
-
-        {/* Delivery Card */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={handleOpenRides}
-          style={[styles.halfCard, { backgroundColor: "#F3F4F6" }]}
-        >
-          <View style={styles.cardGraphicContainer}>
-            <View style={styles.cardGraphicShadow}>
-              <MaterialCommunityIcons name="motorbike" size={46} color="#DC2626" />
-              <MaterialCommunityIcons
-                name="package-variant-closed"
-                size={22}
-                color="#D97706"
-                style={{ position: "absolute", right: -4, top: 4 }}
-              />
-            </View>
-          </View>
-          <Text style={styles.cardLabel}>Delivery</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Row 2: Navigation & Food */}
-      <View style={styles.row}>
-        {/* Navigation Card */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={handleOpenRides}
-          style={[styles.halfCard, { backgroundColor: "#F3F4F6" }]}
-        >
-          <View style={styles.cardGraphicContainer}>
-            <View style={[styles.navBadgeSquare, { backgroundColor: "#15803D" }]}>
-              <View style={styles.navInnerNumber}>
-                <Text style={styles.navNumberText}>1</Text>
-              </View>
-              <MaterialCommunityIcons name="navigation" size={24} color="#FBBF24" style={{ marginTop: 2 }} />
-            </View>
-          </View>
-          <Text style={styles.cardLabel}>Navigation</Text>
-        </TouchableOpacity>
-
-        {/* Food Card with -K99 Promo Badge */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={() => router.push("/promotions" as never)}
-          style={[styles.halfCard, { backgroundColor: "#F3F4F6" }]}
-        >
-          {/* Promo Tag */}
-          <View style={styles.discountBadge}>
-            <Text style={styles.discountBadgeText}>-K99</Text>
-          </View>
-          <View style={styles.cardGraphicContainer}>
-            <View style={styles.cardGraphicShadow}>
-              <MaterialCommunityIcons name="food-drumstick" size={40} color="#EA580C" />
-              <MaterialCommunityIcons
-                name="food-takeout-box"
-                size={24}
-                color="#DC2626"
-                style={{ position: "absolute", left: -8, bottom: -2 }}
-              />
-            </View>
-          </View>
-          <Text style={styles.cardLabel}>Food</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Row 3: Games, Cargo, and Wide Rides Card */}
-      <View style={styles.row}>
-        {/* Games Card */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={() => router.push("/favourites" as never)}
-          style={[styles.thirdCard, { backgroundColor: "#F3F4F6" }]}
-        >
-          <View style={styles.smallCardGraphicContainer}>
-            <Ionicons name="game-controller" size={32} color="#EAB308" />
-          </View>
-          <Text style={styles.cardLabel}>Games</Text>
-        </TouchableOpacity>
-
-        {/* Cargo Card */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={handleOpenRides}
-          style={[styles.thirdCard, { backgroundColor: "#F3F4F6" }]}
-        >
-          <View style={styles.smallCardGraphicContainer}>
-            <MaterialCommunityIcons name="truck-delivery" size={34} color="#EA580C" />
-          </View>
-          <Text style={styles.cardLabel}>Cargo</Text>
-        </TouchableOpacity>
-
-        {/* Highlighted Rides Card */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={handleOpenRides}
-          style={[styles.ridesCard, { backgroundColor: "#F3F4F6" }]}
-        >
-          <View style={styles.ridesGraphicRow}>
-            {/* 3D Car Visual */}
             <View style={styles.carGraphicWrapper}>
-              <Ionicons name="car" size={38} color="#DC2626" />
-              <View style={styles.carRoofWhite} />
+              <Ionicons name="car" size={42} color="#DC2626" />
+              <View style={styles.carSpeedLine} />
             </View>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-            <Text style={styles.ridesMainLabel}>Rides</Text>
-            <Text style={styles.ridesEtaLabel}> • from 4 min</Text>
+          <View style={styles.labelRow}>
+            <Text style={styles.cardMainTitle}>Taxi Hauling</Text>
+            <Text style={styles.cardEtaSubtitle}>• from 3 min</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* 2. Motorbike Hauling Card */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => handleOpenRides("moto")}
+          style={[styles.halfCard, { backgroundColor: "#F3F4F6" }]}
+        >
+          <View style={styles.cardGraphicContainer}>
+            <View style={styles.motoGraphicWrapper}>
+              <MaterialCommunityIcons name="motorbike" size={44} color="#EA580C" />
+              <MaterialCommunityIcons
+                name="lightning-bolt"
+                size={18}
+                color="#FBBF24"
+                style={{ position: "absolute", top: -2, right: -4 }}
+              />
+            </View>
+          </View>
+          <View style={styles.labelRow}>
+            <Text style={styles.cardMainTitle}>Motorbike Hauling</Text>
+            <Text style={styles.cardEtaSubtitle}>• from 2 min</Text>
           </View>
         </TouchableOpacity>
       </View>
+
+      {/* Row 2: Delivery (Bike • Motorbike • Cab) */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => handleOpenRides("delivery")}
+        style={[styles.fullDeliveryCard, { backgroundColor: "#F3F4F6" }]}
+      >
+        <View style={styles.deliveryContentRow}>
+          <View style={styles.deliveryTextColumn}>
+            <View style={styles.deliveryHeaderRow}>
+              <Text style={styles.deliveryMainTitle}>Delivery</Text>
+              <View style={styles.activePill}>
+                <Text style={styles.activePillText}>ACTIVE</Text>
+              </View>
+            </View>
+            <Text style={styles.deliverySubtext}>Bike • Motorbike • Cab</Text>
+            <Text style={styles.deliveryDescription}>
+              Instant courier & parcel transport based on your package size
+            </Text>
+          </View>
+
+          {/* Graphic cluster: Bike, Moto, Cab, Box */}
+          <View style={styles.deliveryIconsCluster}>
+            <View style={styles.parcelIconBadge}>
+              <MaterialCommunityIcons name="package-variant-closed" size={32} color="#DC2626" />
+            </View>
+            <View style={styles.vehiclePillsRow}>
+              <MaterialCommunityIcons name="bicycle" size={16} color="#475569" />
+              <MaterialCommunityIcons name="motorbike" size={16} color="#475569" />
+              <MaterialCommunityIcons name="car-side" size={16} color="#475569" />
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Row 3: Courier & Cleaning Services (Coming Soon) */}
+      <View style={styles.row}>
+        {/* 4. Courier Card (Coming Soon) */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() =>
+            handleComingSoon(
+              "Freeohn Courier",
+              "Our express nationwide parcel delivery and document logistics service is launching soon across Zambia!",
+              "truck-fast"
+            )
+          }
+          style={[styles.halfCard, styles.comingSoonCard]}
+        >
+          <View style={styles.comingSoonBadge}>
+            <Text style={styles.comingSoonBadgeText}>COMING SOON</Text>
+          </View>
+          <View style={styles.cardGraphicContainer}>
+            <MaterialCommunityIcons name="truck-fast" size={38} color="#94A3B8" />
+          </View>
+          <Text style={styles.comingSoonLabel}>Courier</Text>
+        </TouchableOpacity>
+
+        {/* 5. Cleaning Services Card (Coming Soon) */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() =>
+            handleComingSoon(
+              "Cleaning Services",
+              "Professional home, office, and commercial cleaning on-demand by Freeohn logistics will be available soon!",
+              "sparkles"
+            )
+          }
+          style={[styles.halfCard, styles.comingSoonCard]}
+        >
+          <View style={styles.comingSoonBadge}>
+            <Text style={styles.comingSoonBadgeText}>COMING SOON</Text>
+          </View>
+          <View style={styles.cardGraphicContainer}>
+            <MaterialCommunityIcons name="spray-bottle" size={38} color="#94A3B8" />
+          </View>
+          <Text style={styles.comingSoonLabel}>Cleaning Services</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Coming Soon Interactive Modal */}
+      <Modal
+        visible={comingSoonModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setComingSoonModal((prev) => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIconContainer}>
+              <MaterialCommunityIcons
+                name={comingSoonModal.icon as never}
+                size={40}
+                color="#EA580C"
+              />
+            </View>
+
+            <Text style={styles.modalTitle}>{comingSoonModal.title}</Text>
+            <View style={styles.modalBadge}>
+              <Text style={styles.modalBadgeText}>COMING SOON</Text>
+            </View>
+
+            <Text style={styles.modalDesc}>{comingSoonModal.description}</Text>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setComingSoonModal((prev) => ({ ...prev, visible: false }))}
+              style={styles.modalBtn}
+            >
+              <Text style={styles.modalBtnText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -159,121 +207,217 @@ const styles = StyleSheet.create({
   },
   halfCard: {
     flex: 1,
-    height: 108,
-    borderRadius: 24,
+    height: 112,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     position: "relative",
     overflow: "hidden",
   },
-  thirdCard: {
-    flex: 1,
-    height: 104,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-  },
-  ridesCard: {
-    flex: 1.8,
-    height: 104,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
   cardGraphicContainer: {
-    height: 58,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  smallCardGraphicContainer: {
     height: 52,
     justifyContent: "center",
     alignItems: "center",
-  },
-  cardGraphicShadow: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cardLabel: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#1E293B",
-    marginTop: 2,
-  },
-  discountBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    backgroundColor: "#000000",
-    borderRadius: 12,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    zIndex: 10,
-  },
-  discountBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0.2,
-  },
-  navBadgeSquare: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#16A34A",
-  },
-  navInnerNumber: {
-    position: "absolute",
-    top: 4,
-    left: 6,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navNumberText: {
-    fontSize: 9,
-    fontWeight: "900",
-    color: "#15803D",
-  },
-  ridesGraphicRow: {
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
   },
   carGraphicWrapper: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
   },
-  carRoofWhite: {
+  carSpeedLine: {
     position: "absolute",
-    top: 4,
-    left: 8,
-    right: 8,
-    height: 6,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 3,
-    opacity: 0.9,
+    bottom: -2,
+    width: 28,
+    height: 3,
+    backgroundColor: "#FCA5A5",
+    borderRadius: 2,
   },
-  ridesMainLabel: {
-    fontSize: 13,
+  motoGraphicWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  labelRow: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  cardMainTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+    textAlign: "center",
+  },
+  cardEtaSubtitle: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#DC2626",
+    marginTop: 1,
+  },
+  fullDeliveryCard: {
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  deliveryContentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  deliveryTextColumn: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  deliveryHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 2,
+  },
+  deliveryMainTitle: {
+    fontSize: 17,
     fontWeight: "800",
     color: "#0F172A",
   },
-  ridesEtaLabel: {
-    fontSize: 12,
+  activePill: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  activePillText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#16A34A",
+    letterSpacing: 0.5,
+  },
+  deliverySubtext: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#EA580C",
+    marginBottom: 4,
+  },
+  deliveryDescription: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 15,
+  },
+  deliveryIconsCluster: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  parcelIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  vehiclePillsRow: {
+    flexDirection: "row",
+    gap: 6,
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  comingSoonCard: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    opacity: 0.85,
+  },
+  comingSoonBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  comingSoonBadgeText: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: "#B45309",
+    letterSpacing: 0.4,
+  },
+  comingSoonLabel: {
+    fontSize: 13,
     fontWeight: "600",
     color: "#64748B",
+    marginTop: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  modalIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FFEDD5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 6,
+  },
+  modalBadge: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  modalBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#B45309",
+  },
+  modalDesc: {
+    fontSize: 13,
+    color: "#475569",
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  modalBtn: {
+    width: "100%",
+    backgroundColor: "#0F172A",
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  modalBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
+

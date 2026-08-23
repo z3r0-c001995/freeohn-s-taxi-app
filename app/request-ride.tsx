@@ -34,18 +34,22 @@ export default function RequestRideScreen() {
     destLng?: string;
     pickupLat?: string;
     pickupLng?: string;
+    service?: "taxi" | "moto" | "delivery";
   }>();
 
   const trpcUtils = trpc.useUtils();
   const brand = useBrandTheme();
   const { currentUser, currentLocation } = useAppStore();
 
+  const initialService = (params.service === "moto" || params.service === "delivery") ? params.service : "taxi";
   const [pickupLocation, setPickupLocation] = useState<LatLng | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<LatLng | null>(null);
   const [pickupAddress, setPickupAddress] = useState("Kaunda Square Stage 1, 9061");
   const [dropoffAddress, setDropoffAddress] = useState("Lifestyle Health & Fitness");
-  const [selectedTier, setSelectedTier] = useState<RideTierId>("economy");
-  const [categoryTab, setCategoryTab] = useState<"navigator" | "taxi" | "delivery">("taxi");
+  const [selectedTier, setSelectedTier] = useState<RideTierId>(
+    initialService === "moto" ? "moto_std" : initialService === "delivery" ? "del_moto" : "economy"
+  );
+  const [categoryTab, setCategoryTab] = useState<"taxi" | "moto" | "delivery">(initialService);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "momo">("cash");
 
   const [isRequesting, setIsRequesting] = useState(false);
@@ -404,27 +408,13 @@ export default function RequestRideScreen() {
             </View>
           </View>
 
-          {/* Category Switcher Tabs (Navigator | Taxi | Delivery and Cargo) */}
+          {/* Category Switcher Tabs (Taxi Hauling | Motorbike Hauling | Delivery) */}
           <View style={styles.categoryTabsRow}>
             <TouchableOpacity
-              onPress={() => setCategoryTab("navigator")}
-              style={[
-                styles.categoryTab,
-                categoryTab === "navigator" && styles.categoryTabActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.categoryTabText,
-                  categoryTab === "navigator" && styles.categoryTabTextActive,
-                ]}
-              >
-                Navigator
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setCategoryTab("taxi")}
+              onPress={() => {
+                setCategoryTab("taxi");
+                setSelectedTier("economy");
+              }}
               style={[
                 styles.categoryTab,
                 categoryTab === "taxi" && styles.categoryTabActive,
@@ -436,12 +426,35 @@ export default function RequestRideScreen() {
                   categoryTab === "taxi" && styles.categoryTabTextActive,
                 ]}
               >
-                Taxi
+                Taxi Hauling
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => setCategoryTab("delivery")}
+              onPress={() => {
+                setCategoryTab("moto");
+                setSelectedTier("moto_std");
+              }}
+              style={[
+                styles.categoryTab,
+                categoryTab === "moto" && styles.categoryTabActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.categoryTabText,
+                  categoryTab === "moto" && styles.categoryTabTextActive,
+                ]}
+              >
+                Motorbike Hauling
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setCategoryTab("delivery");
+                setSelectedTier("del_moto");
+              }}
               style={[
                 styles.categoryTab,
                 categoryTab === "delivery" && styles.categoryTabActive,
@@ -453,18 +466,20 @@ export default function RequestRideScreen() {
                   categoryTab === "delivery" && styles.categoryTabTextActive,
                 ]}
               >
-                Delivery and Cargo
+                Delivery
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Ride Tier Selector Cards (Economy, Comfort, Fastest) */}
+          {/* Ride Tier Selector Cards */}
           <RideTierSelector
             selectedTier={selectedTier}
             onSelectTier={setSelectedTier}
             baseFare={farePreview?.total ?? 33}
             etaMinutes={etaMinutes}
+            serviceType={categoryTab}
           />
+
 
           {/* Payment Method Selector Row */}
           <TouchableOpacity

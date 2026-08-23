@@ -17,8 +17,8 @@ export function PassengerPromoBanners() {
         {/* Top subtle badge */}
         <View style={styles.heroHeaderRow}>
           <View style={styles.badgePill}>
-            <MaterialCommunityIcons name="shield-check" size={14} color="#15803D" />
-            <Text style={styles.badgeText}>OFFICIAL PARTNER</Text>
+            <MaterialCommunityIcons name="truck-fast" size={14} color="#15803D" />
+            <Text style={styles.badgeText}>FREEOHN LOGISTICS</Text>
           </View>
         </View>
 
@@ -26,17 +26,17 @@ export function PassengerPromoBanners() {
           {/* Text details */}
           <View style={styles.heroTextColumn}>
             <Text style={styles.heroTitle}>
-              GET THE 2026 ELECTION{"\n"}RESULTS ONLINE:
+              FAST & RELIABLE{"\n"}DISPATCH & HAULING:
             </Text>
             <View style={styles.heroUrlPill}>
-              <Ionicons name="globe-outline" size={12} color="#0F172A" />
-              <Text style={styles.heroUrlText}>https://results.elections.org.zm</Text>
+              <Ionicons name="flash" size={12} color="#DC2626" />
+              <Text style={styles.heroUrlText}>Taxi • Motorbike • Delivery</Text>
             </View>
           </View>
 
           {/* Graphic Icon */}
           <View style={styles.heroGraphicContainer}>
-            <MaterialCommunityIcons name="laptop" size={72} color="#1E293B" />
+            <MaterialCommunityIcons name="truck-check" size={72} color="#1E293B" />
           </View>
         </View>
 
@@ -47,36 +47,36 @@ export function PassengerPromoBanners() {
 
       {/* 2. Two-Column Deal Banners */}
       <View style={styles.dealsRow}>
-        {/* Left Deal Card: Narottis Skillet */}
+        {/* Left Deal Card: Moto Haul Special */}
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={() => router.push("/promotions" as never)}
+          onPress={() => router.push({ pathname: "/request-ride" as never, params: { service: "moto" } })}
           style={[styles.dealCard, { backgroundColor: "#E2E8F0" }]}
         >
           <View style={styles.dealGraphicWrapper}>
-            <MaterialCommunityIcons name="pot-steam" size={48} color="#EA580C" />
+            <MaterialCommunityIcons name="motorbike" size={48} color="#EA580C" />
           </View>
           <View style={styles.dealBottomTag}>
-            <Text style={styles.dealBrandTitle}>NAROTTIS</Text>
-            <Text style={styles.dealSubtitle}>Special Skillet Meal</Text>
+            <Text style={styles.dealBrandTitle}>MOTO HAUL</Text>
+            <Text style={styles.dealSubtitle}>Express City Trips from K15</Text>
           </View>
         </TouchableOpacity>
 
-        {/* Right Deal Card: Rump Steak & Onion Rings (K99 Special) */}
+        {/* Right Deal Card: Cab & Cargo Delivery */}
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={() => router.push("/promotions" as never)}
-          style={[styles.dealCard, { backgroundColor: "#581C87" }]}
+          onPress={() => router.push({ pathname: "/request-ride" as never, params: { service: "delivery" } })}
+          style={[styles.dealCard, { backgroundColor: "#1E293B" }]}
         >
           <View style={styles.dealSteakHeader}>
-            <Text style={styles.dealSteakTitle}>RUMP STEAK,{"\n"}FRIES & ONION{"\n"}RINGS</Text>
+            <Text style={styles.dealSteakTitle}>PARCEL & CAB{"\n"}DELIVERY{"\n"}SPECIAL</Text>
           </View>
 
           {/* Price Badges */}
           <View style={styles.priceContainer}>
-            <Text style={styles.originalPrice}>K249</Text>
+            <Text style={styles.originalPrice}>K50</Text>
             <View style={styles.dealPriceTag}>
-              <Text style={styles.dealPriceText}>K99</Text>
+              <Text style={styles.dealPriceText}>K35</Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -84,6 +84,7 @@ export function PassengerPromoBanners() {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
