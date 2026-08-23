@@ -2,6 +2,9 @@ import { Alert, Linking, ScrollView, Text, TouchableOpacity, View } from "react-
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
+import { DriverNavBar } from "@/components/navigation/DriverNavBar";
+import { PassengerNavBar } from "@/components/navigation/PassengerNavBar";
+import { IS_DRIVER_APP } from "@/constants/app-variant";
 import { useColors } from "@/hooks/use-colors";
 import { apiCall } from "@/lib/_core/api";
 
@@ -82,6 +85,7 @@ export default function SafetyCenterScreen() {
           </View>
         </View>
       </ScrollView>
+      {IS_DRIVER_APP ? <DriverNavBar /> : <PassengerNavBar />}
     </ScreenContainer>
   );
 }

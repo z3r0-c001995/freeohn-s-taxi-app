@@ -5,6 +5,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DriverNavBar } from "@/components/navigation/DriverNavBar";
+import { PassengerNavBar } from "@/components/navigation/PassengerNavBar";
 import { AppBadge } from "@/components/ui/app-badge";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
@@ -279,6 +281,7 @@ export default function PaymentScreen() {
           )}
         </View>
       </ScrollView>
+      {IS_DRIVER_APP ? <DriverNavBar /> : <PassengerNavBar />}
     </ScreenContainer>
   );
 }

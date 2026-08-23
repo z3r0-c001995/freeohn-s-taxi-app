@@ -3,7 +3,10 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DriverNavBar } from "@/components/navigation/DriverNavBar";
+import { PassengerNavBar } from "@/components/navigation/PassengerNavBar";
 import { AppCard } from "@/components/ui/app-card";
+import { IS_DRIVER_APP } from "@/constants/app-variant";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 
@@ -105,6 +108,7 @@ export default function SupportScreen() {
 
           <View style={{ height: 40 }} />
         </ScrollView>
+        {IS_DRIVER_APP ? <DriverNavBar /> : <PassengerNavBar />}
       </View>
     </ScreenContainer>
   );

@@ -4,8 +4,11 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DriverNavBar } from "@/components/navigation/DriverNavBar";
+import { PassengerNavBar } from "@/components/navigation/PassengerNavBar";
 import { AppBadge } from "@/components/ui/app-badge";
 import { AppCard } from "@/components/ui/app-card";
+import { IS_DRIVER_APP } from "@/constants/app-variant";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { getTrips } from "@/lib/ride-hailing-api";
@@ -150,6 +153,7 @@ export default function RideHistoryScreen() {
           })}
         </View>
       </ScrollView>
+      {IS_DRIVER_APP ? <DriverNavBar /> : <PassengerNavBar />}
     </ScreenContainer>
   );
 }

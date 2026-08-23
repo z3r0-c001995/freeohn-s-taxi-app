@@ -6,6 +6,8 @@ import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
+import { DriverNavBar } from "@/components/navigation/DriverNavBar";
+import { PassengerNavBar } from "@/components/navigation/PassengerNavBar";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
 import { APP_LABEL, IS_DRIVER_APP, IS_SEEKER_APP } from "@/constants/app-variant";
@@ -571,6 +573,7 @@ export default function HomeScreen() {
           />
         </View>
       </ScrollView>
+      {IS_DRIVER_APP ? <DriverNavBar /> : <PassengerNavBar />}
     </ScreenContainer>
   );
 }
