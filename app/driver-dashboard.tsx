@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet, ActivityIndicator } from "react-native";
+import { Alert, Linking, Platform, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
+
+
 
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
@@ -30,8 +33,6 @@ import { getTripRouteColor } from "@/lib/trip-route-style";
 import { useAppStore } from "@/lib/store";
 import { trpc } from "@/lib/trpc";
 import type { DriverProfileRecord, DriverStatusRecord, TripRecord } from "@shared/ride-hailing";
-
-const DEFAULT_LUSAKA_COORDS = { latitude: -15.4162, longitude: 28.3115 };
 
 type DriverDashboardState = {
   status: (DriverStatusRecord & { dailyEarnings?: number }) | null;
@@ -67,25 +68,28 @@ export default function DriverDashboardScreen() {
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [passengerPin, setPassengerPin] = useState("");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
-  const [currentLocationAddress, setCurrentLocationAddress] = useState<string>("Resolving location...");
+  const [currentLocationAddress, setCurrentLocationAddress] = useState<string>("Acquiring device GPS...");
   const [dispatchRadiusKm, setDispatchRadiusKm] = useState<number>(5);
 
   // Reverse geocode driver's current position
   useEffect(() => {
+    if (!currentLocation) {
+      setCurrentLocationAddress("Acquiring device GPS in realtime...");
+      return;
+    }
     let cancelled = false;
     const resolve = async () => {
-      const coords = currentLocation ?? DEFAULT_LUSAKA_COORDS;
       try {
         const res = await trpcUtils.maps.reverseGeocode.fetch({
-          lat: coords.latitude,
-          lng: coords.longitude,
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude,
         });
         if (!cancelled) {
-          setCurrentLocationAddress(res.address || `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`);
+          setCurrentLocationAddress(res.address || `${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`);
         }
       } catch {
         if (!cancelled) {
-          setCurrentLocationAddress(`${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`);
+          setCurrentLocationAddress(`${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`);
         }
       }
     };
@@ -94,6 +98,7 @@ export default function DriverDashboardScreen() {
       cancelled = true;
     };
   }, [currentLocation, trpcUtils]);
+
 
   // Auto-initialize demo driver session if opening driver app directly
   useEffect(() => {
@@ -213,24 +218,41 @@ export default function DriverDashboardScreen() {
 
   const routeColor = useMemo(() => getTripRouteColor(activeTrip?.state, brand), [activeTrip?.state, brand]);
 
-  // Driver Location Marker
+  // Driver Location Marker (Realtime GPS)
   const driverMarker = useMemo(() => {
     if (currentLocation) {
       return { lat: currentLocation.latitude, lng: currentLocation.longitude };
     }
-    return { lat: DEFAULT_LUSAKA_COORDS.latitude, lng: DEFAULT_LUSAKA_COORDS.longitude };
+    return undefined;
   }, [currentLocation]);
 
-  // Toggle Online/Offline Status
+  // Toggle Online/Offline Status with realtime GPS
   const handleToggleOnline = async () => {
     try {
       setIsUpdatingStatus(true);
       const nextOnline = !isOnline;
-      const coords = currentLocation ?? DEFAULT_LUSAKA_COORDS;
+
+      let coords = currentLocation;
+      if (nextOnline && !coords) {
+        if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+          coords = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+              (err) => reject(new Error(err.message || "Failed to acquire GPS location")),
+              { enableHighAccuracy: true, timeout: 10000 },
+            );
+          });
+          setCurrentLocation(coords);
+        } else {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          setCurrentLocation(coords);
+        }
+      }
 
       await updateDriverStatus({
         isOnline: nextOnline,
-        ...(nextOnline ? { lat: coords.latitude, lng: coords.longitude } : {}),
+        ...(nextOnline && coords ? { lat: coords.latitude, lng: coords.longitude } : {}),
       });
 
       setIsOnline(nextOnline);
@@ -245,27 +267,34 @@ export default function DriverDashboardScreen() {
     }
   };
 
-  // Relocate Driver Coordinates (e.g. for testing or moving to a high-demand hub)
-  const handleSetDriverLocation = async (coords: { latitude: number; longitude: number }, name: string) => {
+  // Refresh Realtime GPS Location
+  const handleRefreshGpsLocation = async () => {
     try {
-      setCurrentLocation(coords);
-      setCurrentLocationAddress(name);
-      await updateDriverLocation({
-        lat: coords.latitude,
-        lng: coords.longitude,
-      });
-      if (isOnline) {
-        await updateDriverStatus({
-          isOnline: true,
-          lat: coords.latitude,
-          lng: coords.longitude,
+      setCurrentLocationAddress("Acquiring realtime GPS...");
+      let coords: { latitude: number; longitude: number };
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+        coords = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+            (err) => reject(new Error(err.message || "Failed to acquire GPS")),
+            { enableHighAccuracy: true, timeout: 10000 },
+          );
         });
+      } else {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      }
+      setCurrentLocation(coords);
+      await updateDriverLocation({ lat: coords.latitude, lng: coords.longitude });
+      if (isOnline) {
+        await updateDriverStatus({ isOnline: true, lat: coords.latitude, lng: coords.longitude });
       }
       await refreshDashboard();
     } catch (err) {
-      console.warn("Failed to set driver location:", err);
+      console.warn("GPS refresh failed:", err);
     }
   };
+
 
   // Trip Actions
   const handleAcceptRequest = async (offerId: string) => {
@@ -416,34 +445,26 @@ export default function DriverDashboardScreen() {
                   </Text>
                 </View>
 
-                {/* Quick Relocation Hub Presets for Testing */}
+                {/* Realtime GPS Live Actions */}
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, paddingTop: 4 }}>
                   <TouchableOpacity
-                    onPress={() => handleSetDriverLocation({ latitude: -15.3897, longitude: 28.3237 }, "East Park Mall, Lusaka")}
+                    onPress={() => void handleRefreshGpsLocation()}
                     style={[styles.relocatePill, { backgroundColor: brand.primary + "15", borderColor: brand.primary + "40" }]}
                   >
-                    <Ionicons name="location" size={12} color={brand.primary} />
-                    <Text style={[styles.relocatePillText, { color: brand.primary }]}>East Park (Lusaka)</Text>
+                    <Ionicons name="refresh-circle" size={14} color={brand.primary} />
+                    <Text style={[styles.relocatePillText, { color: brand.primary }]}>🔄 Refresh Live GPS</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    onPress={() => handleSetDriverLocation({ latitude: -15.4162, longitude: 28.3115 }, "Lusaka Central Hub")}
-                    style={[styles.relocatePill, { backgroundColor: brand.primary + "15", borderColor: brand.primary + "40" }]}
+                  <View
+                    style={[styles.relocatePill, { backgroundColor: "rgba(34, 197, 94, 0.15)", borderColor: "#22C55E" }]}
                   >
-                    <Ionicons name="business" size={12} color={brand.primary} />
-                    <Text style={[styles.relocatePillText, { color: brand.primary }]}>Lusaka CBD</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => handleSetDriverLocation({ latitude: -15.3305, longitude: 28.4529 }, "KK Int'l Airport, Lusaka")}
-                    style={[styles.relocatePill, { backgroundColor: brand.primary + "15", borderColor: brand.primary + "40" }]}
-                  >
-                    <Ionicons name="airplane" size={12} color={brand.primary} />
-                    <Text style={[styles.relocatePillText, { color: brand.primary }]}>Airport</Text>
-                  </TouchableOpacity>
+                    <Ionicons name="radio" size={13} color="#16A34A" />
+                    <Text style={[styles.relocatePillText, { color: "#16A34A" }]}>📡 Realtime Tracking Active</Text>
+                  </View>
                 </View>
               </View>
             </View>
+
 
             {/* Service Radius Filter Selector */}
             <View style={[styles.radiusCard, { backgroundColor: brand.surface, borderColor: brand.border }]}>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+
 import { usePathname, useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -74,7 +75,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const brand = useBrandTheme();
-  const defaultLocation = { latitude: -15.3875, longitude: 28.3228 }; // Default to Lusaka hub
   const {
     currentUser,
     setCurrentLocation,
@@ -93,8 +93,9 @@ export default function HomeScreen() {
   const trpcUtils = trpc.useUtils();
   const [availableRides, setAvailableRides] = useState<any[]>([]);
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
-  const [currentLocationAddress, setCurrentLocationAddress] = useState("Kaunda Square Stage 1, 9061");
+  const [currentLocationAddress, setCurrentLocationAddress] = useState("Locating your position...");
   const lastResolvedLocationKeyRef = useRef("");
+
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -215,7 +216,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!currentLocation || currentUser?.role !== "rider") {
-      setCurrentLocationAddress("Kaunda Square Stage 1, 9061");
+      setCurrentLocationAddress("Locating your position...");
       return;
     }
 
@@ -237,7 +238,7 @@ export default function HomeScreen() {
         }
       } catch {
         if (!cancelled) {
-          setCurrentLocationAddress("Kaunda Square Stage 1, 9061");
+          setCurrentLocationAddress(`${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`);
         }
       }
     };
@@ -250,9 +251,22 @@ export default function HomeScreen() {
 
   const requestLocationPermission = async () => {
     try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setCurrentLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+          },
+          (err) => {
+            console.warn("[GPS] Web getCurrentPosition error:", err);
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+        );
+        return;
+      }
+
       const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
-        const location = await Location.getCurrentPositionAsync({});
+        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         setCurrentLocation({ latitude: location.coords.latitude, longitude: location.coords.longitude });
       } else {
         if (!canAskAgain) {
@@ -265,17 +279,12 @@ export default function HomeScreen() {
             ]
           );
         }
-        if (!currentLocation) {
-          setCurrentLocation(defaultLocation);
-        }
       }
     } catch (error) {
       console.error("Location permission error:", error);
-      if (!currentLocation) {
-        setCurrentLocation(defaultLocation);
-      }
     }
   };
+
 
   const handleStartRide = async (rideId: string) => {
     try {

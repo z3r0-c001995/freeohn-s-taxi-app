@@ -103,11 +103,19 @@ export default function RequestRideScreenWeb() {
         setPickupLocation(location);
         const addr = await resolveAddress(location);
         setPickupAddress(addr);
-      } else {
-        // Default to Lusaka CBD if GPS is uninitialized
-        const defaultLoc = { lat: -15.4164, lng: 28.2847 };
-        setPickupLocation(defaultLoc);
-        setPickupAddress("Cairo Road (Lusaka CBD), Lusaka City Centre");
+      } else if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setPickupLocation(loc);
+            const addr = await resolveAddress(loc);
+            setPickupAddress(addr);
+          },
+          (err) => {
+            console.warn("[GPS] Web getCurrentPosition error:", err.message);
+          },
+          { enableHighAccuracy: true, timeout: 10000 },
+        );
       }
 
       isInitializedRef.current = true;
@@ -115,6 +123,7 @@ export default function RequestRideScreenWeb() {
 
     void init();
   }, [currentLocation, params]);
+
 
   // Calculate Route & Fare
   useEffect(() => {

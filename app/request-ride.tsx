@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { RideMap } from "@/components/maps/RideMap";
@@ -32,6 +33,7 @@ export default function RequestRideScreen() {
     dest?: string;
     destLat?: string;
     destLng?: string;
+    pickup?: string;
     pickupLat?: string;
     pickupLng?: string;
     service?: "taxi" | "moto" | "delivery";
@@ -39,18 +41,20 @@ export default function RequestRideScreen() {
 
   const trpcUtils = trpc.useUtils();
   const brand = useBrandTheme();
-  const { currentUser, currentLocation } = useAppStore();
+  const { currentUser, currentLocation, setCurrentLocation } = useAppStore();
+
 
   const initialService = (params.service === "moto" || params.service === "delivery") ? params.service : "taxi";
   const [pickupLocation, setPickupLocation] = useState<LatLng | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<LatLng | null>(null);
-  const [pickupAddress, setPickupAddress] = useState("Kaunda Square Stage 1, 9061");
-  const [dropoffAddress, setDropoffAddress] = useState("Lifestyle Health & Fitness");
+  const [pickupAddress, setPickupAddress] = useState("Current GPS Location");
+  const [dropoffAddress, setDropoffAddress] = useState("Set dropoff destination");
   const [selectedTier, setSelectedTier] = useState<RideTierId>(
     initialService === "moto" ? "moto_std" : initialService === "delivery" ? "del_moto" : "economy"
   );
   const [categoryTab, setCategoryTab] = useState<"taxi" | "moto" | "delivery">(initialService);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "momo">("cash");
+
 
   const [isRequesting, setIsRequesting] = useState(false);
   const [routeSummary, setRouteSummary] = useState<RouteSummary | null>(null);
@@ -81,6 +85,9 @@ export default function RequestRideScreen() {
       const lat = parseFloat(params.pickupLat);
       const lng = parseFloat(params.pickupLng);
       setPickupLocation({ lat, lng });
+      if (params.pickup) {
+        setPickupAddress(decodeURIComponent(params.pickup));
+      }
     } else if (currentLocation) {
       setPickupLocation({ lat: currentLocation.latitude, lng: currentLocation.longitude });
       trpcUtils.maps.reverseGeocode
@@ -90,8 +97,38 @@ export default function RequestRideScreen() {
         })
         .catch(() => {});
     } else {
-      // Default to Lusaka hub location
-      setPickupLocation({ lat: -15.3875, lng: 28.3228 });
+      // Fetch live realtime device GPS
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setPickupLocation(loc);
+            setCurrentLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+            trpcUtils.maps.reverseGeocode
+              .fetch({ lat: loc.lat, lng: loc.lng })
+              .then((r) => {
+                if (r.address) setPickupAddress(r.address);
+              })
+              .catch(() => {});
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000 },
+        );
+      } else {
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+          .then((pos) => {
+            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setPickupLocation(loc);
+            setCurrentLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+            trpcUtils.maps.reverseGeocode
+              .fetch({ lat: loc.lat, lng: loc.lng })
+              .then((r) => {
+                if (r.address) setPickupAddress(r.address);
+              })
+              .catch(() => {});
+          })
+          .catch(() => {});
+      }
     }
 
     // 2. Dropoff location setup
@@ -102,11 +139,9 @@ export default function RequestRideScreen() {
       if (params.dest) {
         setDropoffAddress(decodeURIComponent(params.dest));
       }
-    } else if (!dropoffLocation) {
-      // Default nearby destination for instant visual route preview
-      setDropoffLocation({ lat: -15.395, lng: 28.332 });
     }
-  }, [params.dest, params.destLat, params.destLng, params.pickupLat, params.pickupLng, currentLocation]);
+  }, [params.dest, params.destLat, params.destLng, params.pickup, params.pickupLat, params.pickupLng, currentLocation, setCurrentLocation, trpcUtils.maps.reverseGeocode]);
+
 
   // Compute route query
   const { data: routeData } = trpc.maps.computeRoute.useQuery(

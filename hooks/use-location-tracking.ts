@@ -13,9 +13,11 @@ export function useLocationTracking() {
     activeRide,
     isLocationTracking,
     setIsLocationTracking,
-    setCurrentLocation
+    setCurrentLocation,
+    currentLocation,
   } = useAppStore();
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const webWatchId = useRef<number | null>(null);
   const webPollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastUpdateTime = useRef<number>(0);
   const lastLocation = useRef<{ lat: number; lng: number } | null>(null);
@@ -41,23 +43,23 @@ export function useLocationTracking() {
       case "ride_in_progress":
         return {
           accuracy: Location.Accuracy.High,
-          timeInterval: 2000, // 2 seconds
-          distanceInterval: 5, // 5 meters
+          timeInterval: 1000, // 1 second
+          distanceInterval: 2, // 2 meters
           enableBackground: true,
         };
       case "driver_online":
         return {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 5000, // 5 seconds
-          distanceInterval: 10, // 10 meters
+          accuracy: Location.Accuracy.High,
+          timeInterval: 3000, // 3 seconds
+          distanceInterval: 5, // 5 meters
           enableBackground: true,
         };
       case "rider_passive":
       default:
         return {
           accuracy: Location.Accuracy.Balanced,
-          timeInterval: 30000, // 30 seconds
-          distanceInterval: 100, // 100 meters
+          timeInterval: 5000, // 5 seconds
+          distanceInterval: 5, // 5 meters
           enableBackground: false,
         };
     }
@@ -76,14 +78,14 @@ export function useLocationTracking() {
       Math.sqrt(
         Math.pow(newLocation.lat - lastLocation.current.lat, 2) +
           Math.pow(newLocation.lng - lastLocation.current.lng, 2),
-      ) * 111000; // Rough conversion to meters
+      ) * 111000;
 
-    // Push updates immediately when movement exceeds the threshold.
+    // Push update immediately on movement
     if (distanceMeters >= config.distanceInterval) {
       return true;
     }
 
-    // Heartbeat update for realtime presence even when stationary.
+    // Heartbeat update for presence
     return elapsedMs >= config.timeInterval;
   }, [getTrackingConfig]);
 
@@ -95,7 +97,6 @@ export function useLocationTracking() {
       speed: number | null | undefined,
       mode: TrackingMode,
     ) => {
-      if (!currentUser) return;
       const newLocation = { lat: latitude, lng: longitude };
 
       if (!shouldUpdateLocation(newLocation, mode)) {
@@ -106,7 +107,7 @@ export function useLocationTracking() {
       lastLocation.current = newLocation;
       lastUpdateTime.current = Date.now();
 
-      if (currentUser.role === "driver") {
+      if (currentUser?.role === "driver") {
         try {
           const tripId = activeRide?.id ? String(activeRide.id) : undefined;
           try {
@@ -137,6 +138,11 @@ export function useLocationTracking() {
   );
 
   const stopLocationTracking = useCallback(() => {
+    if (webWatchId.current !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.clearWatch(webWatchId.current);
+      webWatchId.current = null;
+    }
+
     if (webPollingTimer.current) {
       clearInterval(webPollingTimer.current);
       webPollingTimer.current = null;
@@ -148,8 +154,6 @@ export function useLocationTracking() {
           locationSubscription.current.remove();
         }
       } catch (error) {
-        // Web runtime occasionally returns a stale emitter-backed subscription.
-        // Continue cleanup instead of crashing the screen.
         console.warn("Location subscription cleanup failed:", error);
       }
       locationSubscription.current = null;
@@ -158,20 +162,50 @@ export function useLocationTracking() {
   }, [setIsLocationTracking]);
 
   const startLocationTracking = useCallback(async () => {
-    if (!currentUser) return;
-
     try {
       const mode = getTrackingMode();
       const config = getTrackingConfig(mode);
 
-      // Request permissions based on mode
+      // On Web platform: use browser geolocation API directly for continuous realtime tracking
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+        setIsLocationTracking(true);
+
+        // Immediate single fix
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude, heading, speed } = pos.coords;
+            void processLocationUpdate(latitude, longitude, heading, speed, mode);
+          },
+          (err) => {
+            console.warn("[GPS] Initial getCurrentPosition warning:", err.message);
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+        );
+
+        // Continuous GPS watcher
+        if (webWatchId.current === null) {
+          webWatchId.current = navigator.geolocation.watchPosition(
+            (pos) => {
+              const { latitude, longitude, heading, speed } = pos.coords;
+              void processLocationUpdate(latitude, longitude, heading, speed, mode);
+            },
+            (err) => {
+              console.warn("[GPS] watchPosition error:", err.message);
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+          );
+        }
+        return;
+      }
+
+      // Native platform permissions & watching
       const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         console.error("Foreground location permission denied");
         if (!canAskAgain) {
           Alert.alert(
             "Location Required",
-            "Please enable location permissions in settings to track your ride.",
+            "Please enable location permissions in settings for realtime GPS tracking.",
             [
               { text: "Cancel", style: "cancel" },
               { text: "Open Settings", onPress: () => Linking.openSettings() }
@@ -182,45 +216,25 @@ export function useLocationTracking() {
       }
 
       if (config.enableBackground && Platform.OS !== "web") {
-        const { status: bgStatus, canAskAgain: bgCanAskAgain } = await Location.requestBackgroundPermissionsAsync();
+        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
         if (bgStatus !== "granted") {
           console.warn("Background location permission denied, using foreground only");
-          if (!bgCanAskAgain) {
-            Alert.alert(
-              "Background Location Recommended",
-              "For best results as a driver, please select 'Allow all the time' in settings.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Open Settings", onPress: () => Linking.openSettings() }
-              ]
-            );
-          }
         }
       }
 
       setIsLocationTracking(true);
 
-      if (Platform.OS === "web") {
-        const poll = async () => {
-          try {
-            const location = await Location.getCurrentPositionAsync({
-              accuracy: config.accuracy,
-            });
-            const { latitude, longitude, heading, speed } = location.coords;
-            await processLocationUpdate(latitude, longitude, heading, speed, mode);
-          } catch (error) {
-            console.error("Failed to poll web location:", error);
-          }
-        };
+      // Fetch initial position immediately
+      const initialPos = await Location.getCurrentPositionAsync({ accuracy: config.accuracy });
+      await processLocationUpdate(
+        initialPos.coords.latitude,
+        initialPos.coords.longitude,
+        initialPos.coords.heading,
+        initialPos.coords.speed,
+        mode,
+      );
 
-        await poll();
-        webPollingTimer.current = setInterval(() => {
-          void poll();
-        }, config.timeInterval);
-        return;
-      }
-
-      // Start watching position
+      // Continuous native watcher
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: config.accuracy,
@@ -236,28 +250,23 @@ export function useLocationTracking() {
       console.error("Failed to start location tracking:", error);
       setIsLocationTracking(false);
     }
-  }, [currentUser, getTrackingMode, getTrackingConfig, processLocationUpdate, setIsLocationTracking]);
+  }, [getTrackingMode, getTrackingConfig, processLocationUpdate, setIsLocationTracking]);
 
-  // Auto-manage tracking based on mode
+  // Auto-start continuous realtime tracking on mount
   useEffect(() => {
-    const mode = getTrackingMode();
-    const shouldTrack = mode !== "rider_passive";
-
-    if (shouldTrack && !isLocationTracking) {
-      startLocationTracking();
-    } else if (!shouldTrack && isLocationTracking) {
-      stopLocationTracking();
-    }
+    startLocationTracking();
 
     return () => {
       stopLocationTracking();
     };
-  }, [activeRide, currentUser, getTrackingMode, isLocationTracking, startLocationTracking, stopLocationTracking]);
+  }, [startLocationTracking, stopLocationTracking]);
 
   return {
     isTracking: isLocationTracking,
+    currentLocation,
     mode: getTrackingMode(),
     startTracking: startLocationTracking,
     stopTracking: stopLocationTracking,
   };
 }
+
