@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-function parseDevUser(req: Request): Request["authUser"] | null {
+export function parseDevUser(req: Request): Request["authUser"] | null {
   const allowDevAuth =
     process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_AUTH_HEADER === "1";
   if (!allowDevAuth) {
@@ -21,26 +21,57 @@ function parseDevUser(req: Request): Request["authUser"] | null {
 
   const userIdHeader = req.headers["x-dev-user-id"];
   const roleHeader = req.headers["x-dev-user-role"];
-  if (typeof userIdHeader !== "string" || typeof roleHeader !== "string") {
-    return null;
+  if (typeof userIdHeader === "string" && typeof roleHeader === "string") {
+    const id = Number(userIdHeader);
+    const role = roleHeader.trim().toLowerCase();
+    if (Number.isFinite(id) && id > 0 && userRoleValues.includes(role as UserRole)) {
+      return {
+        id,
+        openId: String(id),
+        name: role === "driver" ? "Freeohn Driver" : role === "admin" ? "System Admin" : "Freeohn Passenger",
+        email: null,
+        loginMethod: "dev-header",
+        role: role as UserRole,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastSignedIn: new Date(),
+      };
+    }
   }
 
-  const id = Number(userIdHeader);
-  const role = roleHeader.trim().toLowerCase();
-  if (!Number.isFinite(id) || id <= 0) {
-    return null;
+  // Fallback for dev mode when calling routes directly (e.g. localhost browser testing)
+  const path = req.originalUrl || req.url || req.path || "";
+  const isDriverEndpoint =
+    path.includes("/api/driver") ||
+    path.includes("/driver/") ||
+    (path.includes("/api/drivers") && !path.includes("/admin/"));
+  const isAdminEndpoint = path.includes("/admin/");
+
+  if (isAdminEndpoint) {
+    return null; // Admin must provide admin credentials/header
   }
-  if (!userRoleValues.includes(role as UserRole)) {
-    return null;
+
+  if (isDriverEndpoint) {
+    return {
+      id: 2001001,
+      openId: "2001001",
+      name: "Freeohn Driver Demo",
+      email: "driver@freeohn.com",
+      loginMethod: "dev-default",
+      role: "driver",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    };
   }
 
   return {
-    id,
-    openId: String(id),
-    name: "Dev User",
-    email: null,
-    loginMethod: "dev-header",
-    role: role as UserRole,
+    id: 1001,
+    openId: "1001",
+    name: "Freeohn Passenger Demo",
+    email: "passenger@freeohn.com",
+    loginMethod: "dev-default",
+    role: "rider",
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -74,3 +105,4 @@ export function requireRole(...roles: Array<"rider" | "driver" | "admin">) {
     next();
   };
 }
+

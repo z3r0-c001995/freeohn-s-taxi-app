@@ -231,10 +231,11 @@ export default function RequestRideScreen() {
   }, [pickupLocation]);
 
   const handleRequestRide = async () => {
-    if (!pickupLocation || !dropoffLocation || !currentUser) {
+    if (!pickupLocation || !dropoffLocation) {
       Alert.alert("Validation", "Please select pickup and dropoff locations.");
       return;
     }
+    const effectiveUserId = currentUser?.id ?? 1001;
     setIsRequesting(true);
     try {
       const distanceMeters = routeSummary?.distanceMeters ?? 0;
@@ -251,14 +252,16 @@ export default function RequestRideScreen() {
           distanceMeters,
           durationSeconds,
           paymentMethod: paymentMethod === "card" ? "MOBILE_MONEY" : "CASH",
-          idempotencyKey: `trip_${Date.now()}_${currentUser.id}`,
+          idempotencyKey: `trip_${Date.now()}_${effectiveUserId}`,
         });
-      } catch {
+      } catch (err: any) {
+        // If createTrip throws, try fallback
+        console.warn("[Ride] Backend createTrip error:", err);
         const localFare =
           farePreview?.total ??
           calculateFare((distanceMeters || 1000) / 1000, (durationSeconds || 300) / 60, rideType);
         trip = await createRide(
-          currentUser.id.toString(),
+          effectiveUserId.toString(),
           pickupLocation.lat,
           pickupLocation.lng,
           dropoffLocation.lat,

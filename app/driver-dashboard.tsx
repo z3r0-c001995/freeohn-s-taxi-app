@@ -58,7 +58,7 @@ export default function DriverDashboardScreen() {
   const router = useRouter();
   const brand = useBrandTheme();
   const trpcUtils = trpc.useUtils();
-  const { currentUser, currentLocation, setCurrentLocation } = useAppStore();
+  const { currentUser, setCurrentUser, currentLocation, setCurrentLocation } = useAppStore();
   const { isTracking } = useLocationTracking();
 
   const [isOnline, setIsOnline] = useState(false);
@@ -95,9 +95,25 @@ export default function DriverDashboardScreen() {
     };
   }, [currentLocation, trpcUtils]);
 
+  // Auto-initialize demo driver session if opening driver app directly
+  useEffect(() => {
+    if (!currentUser) {
+      setCurrentUser({
+        id: 2001001,
+        openId: "2001001",
+        name: "Freeohn Driver",
+        email: "driver@freeohn.com",
+        loginMethod: "phone",
+        role: "driver",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastSignedIn: new Date(),
+      } as any);
+    }
+  }, [currentUser, setCurrentUser]);
+
   // Load Dashboard Data
   const refreshDashboard = useCallback(async () => {
-    if (!currentUser) return;
     try {
       const data = await getDriverDashboard();
       setDashboardData(data);
@@ -107,7 +123,7 @@ export default function DriverDashboardScreen() {
       const msg = err instanceof Error ? err.message : "Unable to sync driver status";
       setSyncErrorMessage(msg);
     }
-  }, [currentUser]);
+  }, []);
 
   useEffect(() => {
     if (!IS_DRIVER_APP) {
@@ -116,19 +132,19 @@ export default function DriverDashboardScreen() {
       ]);
       return;
     }
-    if (!currentUser) return;
     void refreshDashboard();
     const interval = setInterval(() => {
       void refreshDashboard();
     }, 5000);
     return () => clearInterval(interval);
-  }, [currentUser, refreshDashboard, router]);
+  }, [refreshDashboard, router]);
 
   // Poll for incoming requests when online
   const pollRequests = useCallback(async () => {
-    if (!currentUser || !isOnline) return;
+    if (!isOnline) return;
     try {
       const res = await getDriverRequests();
+
       setDashboardData((prev) => ({
         ...(prev ?? {
           status: null,

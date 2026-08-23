@@ -70,22 +70,43 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
         return;
       }
 
-      if (
-        Platform.OS === "web" &&
-        variantRole === "driver" &&
-        typeof window !== "undefined" &&
-        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-      ) {
-        // Local dual-app testing relies on pre-registered backend demo drivers.
-        headers["x-dev-user-id"] = resolveDevDriverUserId();
+      const isDriverApp =
+        variantRole === "driver" ||
+        (typeof window !== "undefined" &&
+          (window.location.port === "8083" ||
+            window.location.pathname.includes("driver") ||
+            window.localStorage.getItem("appVariant") === "driver"));
+
+      if (isDriverApp) {
+        // Driver identity
+        let driverId = resolveDevDriverUserId();
+        const stateUser = useAppStore.getState().currentUser as { id?: number; role?: string } | null;
+        if (stateUser?.id) {
+          driverId = String(stateUser.id);
+        } else {
+          const driverUserRaw =
+            Platform.OS === "web"
+              ? typeof window !== "undefined"
+                ? window.localStorage.getItem("currentUser")
+                : null
+              : await AsyncStorage.getItem("currentUser");
+          if (driverUserRaw) {
+            try {
+              const parsed = JSON.parse(driverUserRaw);
+              if (parsed?.id) driverId = String(parsed.id);
+            } catch {}
+          }
+        }
+        headers["x-dev-user-id"] = driverId;
         headers["x-dev-user-role"] = "driver";
         return;
       }
 
+      // Seeker / Rider app
       const stateUser = useAppStore.getState().currentUser as { id?: number; role?: string } | null;
-      if (stateUser?.id && stateUser?.role) {
+      if (stateUser?.id) {
         headers["x-dev-user-id"] = String(stateUser.id);
-        headers["x-dev-user-role"] = String(variantRole ?? stateUser.role);
+        headers["x-dev-user-role"] = "rider";
         return;
       }
 
@@ -95,20 +116,26 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
             ? window.localStorage.getItem("currentUser")
             : null
           : await AsyncStorage.getItem("currentUser");
-      if (!userRaw) return;
-
-      const user = JSON.parse(userRaw) as { id?: number; role?: string };
-      if (user?.id && user?.role) {
-        headers["x-dev-user-id"] = String(user.id);
-        headers["x-dev-user-role"] = String(variantRole ?? user.role);
-      } else if (user?.id && variantRole) {
-        headers["x-dev-user-id"] = String(user.id);
-        headers["x-dev-user-role"] = variantRole;
+      if (userRaw) {
+        try {
+          const user = JSON.parse(userRaw) as { id?: number; role?: string };
+          if (user?.id) {
+            headers["x-dev-user-id"] = String(user.id);
+            headers["x-dev-user-role"] = "rider";
+            return;
+          }
+        } catch {}
       }
+
+      // Default fallback for rider testing without login
+      headers["x-dev-user-id"] = "1001";
+      headers["x-dev-user-role"] = "rider";
     } catch {
-      // Ignore malformed local user cache.
+      headers["x-dev-user-id"] = "1001";
+      headers["x-dev-user-role"] = "rider";
     }
   };
+
 
   // Determine the auth method:
   // - Native platform: use stored session token as Bearer auth

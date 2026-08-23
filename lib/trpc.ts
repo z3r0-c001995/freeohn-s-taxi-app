@@ -27,8 +27,19 @@ export function createTRPCClient() {
         transformer: superjson,
         async headers() {
           const token = await Auth.getSessionToken();
-          return token ? { Authorization: `Bearer ${token}` } : {};
+          if (token) return { Authorization: `Bearer ${token}` };
+
+          const isDriverApp =
+            process.env.EXPO_PUBLIC_APP_VARIANT === "driver" ||
+            (typeof window !== "undefined" &&
+              (window.location.port === "8083" || window.location.pathname.includes("driver")));
+
+          return {
+            "x-dev-user-id": isDriverApp ? "2001001" : "1001",
+            "x-dev-user-role": isDriverApp ? "driver" : "rider",
+          };
         },
+
         // Custom fetch to include credentials for cookie-based auth
         fetch(url, options) {
           return fetch(url, {
