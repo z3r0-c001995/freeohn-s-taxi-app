@@ -48,17 +48,29 @@ type SerpApiLocalPlace = {
   title?: string;
   address?: string;
   place_id?: string;
+  data_id?: string;
+  data_cid?: string;
   gps_coordinates?: {
     latitude?: number;
     longitude?: number;
   };
   description?: string;
+  type?: string;
 };
 
 type SerpApiResponse = {
-  local_results?: {
-    places?: SerpApiLocalPlace[];
+  place_results?: {
+    title?: string;
+    address?: string;
+    place_id?: string;
+    data_id?: string;
+    data_cid?: string;
+    gps_coordinates?: {
+      latitude?: number;
+      longitude?: number;
+    };
   };
+  local_results?: SerpApiLocalPlace[] | { places?: SerpApiLocalPlace[] };
   local_map?: {
     gps_coordinates?: {
       latitude?: number;
@@ -423,73 +435,116 @@ async function fetchSerpApiPlaces(query: string, location?: { lat: number; lng: 
   if (!apiKey) return [];
 
   try {
-    const isZambiaSpecified = query.toLowerCase().includes("zambia") || query.toLowerCase().includes("lusaka") || query.toLowerCase().includes("kitwe");
+    const isZambiaSpecified =
+      query.toLowerCase().includes("zambia") ||
+      query.toLowerCase().includes("lusaka") ||
+      query.toLowerCase().includes("kitwe") ||
+      query.toLowerCase().includes("ndola");
     const searchQuery = isZambiaSpecified ? query : `${query}, Zambia`;
 
     const params = new URLSearchParams({
-      engine: "google",
+      engine: "google_maps",
       q: searchQuery,
-      location: "Zambia",
-      gl: "zm",
-      hl: "en",
       api_key: apiKey,
     });
 
     if (location) {
-      params.set("lat", String(location.lat));
-      params.set("lon", String(location.lng));
+      params.set("ll", `@${location.lat},${location.lng},14z`);
     }
 
     const response = await axios.get<SerpApiResponse>(`https://serpapi.com/search.json?${params}`, {
-      timeout: 4500,
+      timeout: 5000,
     });
 
-    const places = response.data?.local_results?.places ?? [];
-    if (places.length > 0) {
-      return places
-        .filter((p) => typeof p.gps_coordinates?.latitude === "number" && typeof p.gps_coordinates?.longitude === "number")
-        .map((place, index) => {
-          const lat = place.gps_coordinates!.latitude!;
-          const lng = place.gps_coordinates!.longitude!;
-          const mainText = place.title?.trim() || query;
-          const secondaryText = place.address?.trim() || "Zambia";
-          const fullAddress = `${mainText}${place.address ? `, ${place.address}` : ", Zambia"}`;
+    const results: Array<{
+      place_id: string;
+      description: string;
+      structured_formatting: { main_text: string; secondary_text: string };
+      geometry: { location: { lat: number; lng: number } };
+      formatted_address: string;
+    }> = [];
 
-          return {
-            place_id: place.place_id || `serp_${index}_${lat}_${lng}`,
-            description: fullAddress,
-            structured_formatting: {
-              main_text: mainText,
-              secondary_text: secondaryText,
-            },
-            geometry: {
-              location: { lat, lng },
-            },
-            formatted_address: fullAddress,
-          };
-        });
+    // 1. Check single place match (place_results)
+    if (
+      response.data?.place_results?.gps_coordinates?.latitude &&
+      response.data?.place_results?.gps_coordinates?.longitude
+    ) {
+      const pr = response.data.place_results;
+      const lat = pr.gps_coordinates.latitude;
+      const lng = pr.gps_coordinates.longitude;
+      const mainText = pr.title?.trim() || query;
+      const secondaryText = pr.address?.trim() || "Zambia";
+      const fullAddress = `${mainText}${pr.address ? `, ${pr.address}` : ", Zambia"}`;
+
+      results.push({
+        place_id: pr.place_id || pr.data_id || `serp_pr_${lat}_${lng}`,
+        description: fullAddress,
+        structured_formatting: {
+          main_text: mainText,
+          secondary_text: secondaryText,
+        },
+        geometry: {
+          location: { lat, lng },
+        },
+        formatted_address: fullAddress,
+      });
     }
 
-    if (response.data?.local_map?.gps_coordinates?.latitude && response.data?.local_map?.gps_coordinates?.longitude) {
-      const lat = response.data.local_map.gps_coordinates.latitude;
-      const lng = response.data.local_map.gps_coordinates.longitude;
-      return [
-        {
-          place_id: `serp_map_${lat}_${lng}`,
-          description: `${query}, Zambia`,
+    // 2. Check multiple places list (local_results)
+    const rawPlaces = Array.isArray(response.data?.local_results)
+      ? response.data.local_results
+      : response.data?.local_results?.places ?? [];
+
+    for (let index = 0; index < rawPlaces.length; index++) {
+      const place = rawPlaces[index];
+      if (
+        typeof place.gps_coordinates?.latitude === "number" &&
+        typeof place.gps_coordinates?.longitude === "number"
+      ) {
+        const lat = place.gps_coordinates.latitude;
+        const lng = place.gps_coordinates.longitude;
+        const mainText = place.title?.trim() || query;
+        const secondaryText = place.address?.trim() || "Zambia";
+        const fullAddress = `${mainText}${place.address ? `, ${place.address}` : ", Zambia"}`;
+
+        results.push({
+          place_id: place.place_id || place.data_id || `serp_${index}_${lat}_${lng}`,
+          description: fullAddress,
           structured_formatting: {
-            main_text: query,
-            secondary_text: "Zambia",
+            main_text: mainText,
+            secondary_text: secondaryText,
           },
           geometry: {
             location: { lat, lng },
           },
-          formatted_address: `${query}, Zambia`,
-        },
-      ];
+          formatted_address: fullAddress,
+        });
+      }
     }
 
-    return [];
+    // 3. Fallback to local_map coordinates
+    if (
+      results.length === 0 &&
+      response.data?.local_map?.gps_coordinates?.latitude &&
+      response.data?.local_map?.gps_coordinates?.longitude
+    ) {
+      const lat = response.data.local_map.gps_coordinates.latitude;
+      const lng = response.data.local_map.gps_coordinates.longitude;
+      results.push({
+        place_id: `serp_map_${lat}_${lng}`,
+        description: `${query}, Zambia`,
+        structured_formatting: {
+          main_text: query,
+          secondary_text: "Zambia",
+        },
+        geometry: {
+          location: { lat, lng },
+        },
+        formatted_address: `${query}, Zambia`,
+      });
+    }
+
+    return results;
   } catch (error) {
     logger.warn("maps.serpapi.autocomplete.failed", {
       message: error instanceof Error ? error.message : "unknown",
