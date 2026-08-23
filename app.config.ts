@@ -32,10 +32,10 @@ const bundleId =
 const variantSuffix = appVariant === "driver" ? "driver" : "seeker";
 const appScheme = appVariant === "driver" ? "freeohndriver" : "freeohnseeker";
 const appName = appVariant === "driver" ? "Freeohn Driver" : "Freeohn's Ride App";
-const appSlug = appVariant === "driver" ? "freeohn-driver" : "freeohn-seeker";
+const appSlug = appVariant === "driver" ? "freeohn-driver" : "freeohn";
 const packageId = `${bundleId}.${variantSuffix}`;
-const seekerProjectId = process.env.EAS_PROJECT_ID_SEEKER ?? "3f0b926d-bba9-4ea9-81fd-b188040f405a";
-const driverProjectId = process.env.EAS_PROJECT_ID_DRIVER ?? "51241631-cc10-4138-a7ed-c6ae8eefd642";
+const seekerProjectId = process.env.EAS_PROJECT_ID_SEEKER ?? process.env.EAS_PROJECT_ID ?? "71062c24-fcdf-4077-964f-42ce1e4723f9";
+const driverProjectId = process.env.EAS_PROJECT_ID_DRIVER ?? "71062c24-fcdf-4077-964f-42ce1e4723f9";
 const easProjectId = appVariant === "driver" ? driverProjectId : seekerProjectId;
 
 process.env.EXPO_PUBLIC_DEEP_LINK_SCHEME = appScheme;
