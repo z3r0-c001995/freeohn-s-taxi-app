@@ -1,52 +1,80 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Image, Linking, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usePathname, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { RideMap } from "@/components/maps/RideMap";
 import { DriverNavBar } from "@/components/navigation/DriverNavBar";
 import { PassengerNavBar } from "@/components/navigation/PassengerNavBar";
+import { PassengerServiceGrid } from "@/components/passenger/PassengerServiceGrid";
+import { PassengerPromoBanners } from "@/components/passenger/PassengerPromoBanners";
 import { AppButton } from "@/components/ui/app-button";
-import { AppCard } from "@/components/ui/app-card";
 import { APP_LABEL, IS_DRIVER_APP, IS_SEEKER_APP } from "@/constants/app-variant";
-import { APP_LOGO } from "@/constants/brand-assets";
 import { radii, shadows } from "@/constants/design-system";
 import { useBrandTheme } from "@/hooks/use-brand-theme";
 import { useLocationTracking } from "@/hooks/use-location-tracking";
 import { useAppStore } from "@/lib/store";
 import { trpc } from "@/lib/trpc";
-import { calculateDistance, mapRemoteTripToLocal } from "@/lib/ride-utils";
+import { mapRemoteTripToLocal } from "@/lib/ride-utils";
 import {
   getAvailableRides,
   getDriverProfile,
   getRideById,
-  setDriverOnlineStatus,
   startRide,
-  acceptRide,
   completeRide,
 } from "@/lib/db-service";
 import {
-  acceptDriverRequest,
   completeTrip as completeRemoteTrip,
   getDriverRequests,
   getNearbyDrivers,
   getTrip as getRemoteTrip,
   startTrip as startRemoteTrip,
-  updateDriverStatus,
 } from "@/lib/ride-hailing-api";
-import type { NearbyDriverMarker, PlaceDetails } from "@/lib/maps/map-types";
-import { PlaceSearchInput } from "@/components/places/PlaceSearchInput";
+import type { NearbyDriverMarker } from "@/lib/maps/map-types";
 
-
+// Suggested destinations based on real Lusaka & Mansa points of interest
+const POPULAR_DESTINATIONS = [
+  {
+    id: "lifestyle",
+    name: "Lifestyle Health & Fitness",
+    address: "Lusaka, University of Zambia",
+    lat: -15.395,
+    lng: 28.332,
+    icon: "dumbbell" as const,
+    iconType: "material" as const,
+    iconColor: "#64748B",
+    bg: "#F1F5F9",
+  },
+  {
+    id: "kfc",
+    name: "Kentucky Fried Chicken",
+    address: "Manda Hill Mall, Great East Road, Lusaka",
+    lat: -15.401,
+    lng: 28.307,
+    icon: "silverware-fork-knife" as const,
+    iconType: "material" as const,
+    iconColor: "#64748B",
+    bg: "#F1F5F9",
+  },
+  {
+    id: "eastpark",
+    name: "East Park Mall",
+    address: "Great East Road, Lusaka",
+    lat: -15.392,
+    lng: 28.327,
+    icon: "shopping" as const,
+    iconType: "material" as const,
+    iconColor: "#64748B",
+    bg: "#F1F5F9",
+  },
+];
 
 export default function HomeScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const brand = useBrandTheme();
-  // Default to Mansa District, Luapula Province, Zambia — the app's launch area
-  const defaultLocation = { latitude: -11.197, longitude: 28.891 };
+  const defaultLocation = { latitude: -15.3875, longitude: 28.3228 }; // Default to Lusaka hub
   const {
     currentUser,
     setCurrentLocation,
@@ -58,10 +86,6 @@ export default function HomeScreen() {
     activeRide,
     setActiveRide,
     addRideToHistory,
-    setCurrentUser,
-    setIsAuthenticated,
-    persist,
-    rideHistory,
     savedLocations,
   } = useAppStore();
 
@@ -69,15 +93,13 @@ export default function HomeScreen() {
   const trpcUtils = trpc.useUtils();
   const [availableRides, setAvailableRides] = useState<any[]>([]);
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriverMarker[]>([]);
-  const [lastNearbyUpdate, setLastNearbyUpdate] = useState<string | null>(null);
-  const [currentLocationAddress, setCurrentLocationAddress] = useState("Detecting your location...");
+  const [currentLocationAddress, setCurrentLocationAddress] = useState("Kaunda Square Stage 1, 9061");
   const lastResolvedLocationKeyRef = useRef("");
 
   useEffect(() => {
-    if (!isHydrated) return; // Wait for store to hydrate from AsyncStorage
+    if (!isHydrated) return;
 
     if (!isAuthenticated) {
-      // Avoid forcing onboarding when the app is opened directly on admin tooling routes.
       if (pathname.startsWith("/admin")) {
         return;
       }
@@ -85,7 +107,6 @@ export default function HomeScreen() {
       return;
     }
 
-    // Driver app: redirect home tab straight to the driver dashboard
     if (IS_DRIVER_APP) {
       router.replace("/driver-dashboard" as never);
       return;
@@ -174,7 +195,6 @@ export default function HomeScreen() {
             etaSeconds: driver.etaSeconds,
           })),
         );
-        setLastNearbyUpdate(response.fetchedAt);
       } catch {
         if (!canceled) {
           setNearbyDrivers([]);
@@ -195,7 +215,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!currentLocation || currentUser?.role !== "rider") {
-      setCurrentLocationAddress("Enable location to use precise pickup.");
+      setCurrentLocationAddress("Kaunda Square Stage 1, 9061");
       return;
     }
 
@@ -212,12 +232,12 @@ export default function HomeScreen() {
           lat: currentLocation.latitude,
           lng: currentLocation.longitude,
         });
-        if (!cancelled) {
-          setCurrentLocationAddress(response.address || "Current location");
+        if (!cancelled && response.address) {
+          setCurrentLocationAddress(response.address);
         }
       } catch {
         if (!cancelled) {
-          setCurrentLocationAddress("Current location");
+          setCurrentLocationAddress("Kaunda Square Stage 1, 9061");
         }
       }
     };
@@ -246,7 +266,6 @@ export default function HomeScreen() {
           );
         }
         if (!currentLocation) {
-          // Keep app usable for web testing when browser geolocation is blocked.
           setCurrentLocation(defaultLocation);
         }
       }
@@ -258,114 +277,18 @@ export default function HomeScreen() {
     }
   };
 
-  const handleRequestRide = () => {
-    if (currentUser?.role !== "rider") {
-      Alert.alert("Error", "Only riders can request rides");
-      return;
-    }
-    router.push("/request-ride");
-  };
-
-  const handleOpenSafetyCenter = () => {
-    router.push("/safety-center" as never);
-  };
-
-  const handleOpenTripCenter = () => {
-    if (!activeRide?.id) return;
-    router.push(`/trip/${activeRide.id}` as never);
-  };
-
-  const handleOpenRideHistory = () => {
-    router.push("/ride-history" as never);
-  };
-
-  const handleResetProfile = async () => {
-    setCurrentUser(null);
-    setIsAuthenticated(false);
-    await persist();
-    router.replace("/(auth)/onboarding");
-  };
-
-  const handleToggleOnline = async () => {
-    if (currentUser?.role !== "driver") {
-      Alert.alert("Error", "Only drivers can toggle online status");
-      return;
-    }
-
-    if (!currentUser) return;
-
-    try {
-      const newStatus = !driverProfile?.isOnline;
-      const sourceLocation = currentLocation ?? defaultLocation;
-      try {
-        await updateDriverStatus({
-          isOnline: newStatus,
-          lat: newStatus ? sourceLocation.latitude : undefined,
-          lng: newStatus ? sourceLocation.longitude : undefined,
-        });
-      } catch {
-        if (Platform.OS === "web") {
-          throw new Error("Unable to reach backend to update status.");
-        }
-        await setDriverOnlineStatus(currentUser.id.toString(), newStatus);
-      }
-
-      if (driverProfile) {
-        setDriverProfile({
-          ...driverProfile,
-          isOnline: newStatus,
-        });
-      }
-
-      Alert.alert("Status Updated", `You are now ${newStatus ? "online" : "offline"}`);
-    } catch (error) {
-      console.error("Failed to toggle online status:", error);
-      Alert.alert("Error", "Failed to update status");
-    }
-  };
-
-  const handleAcceptRide = async (rideId: string) => {
-    if (!currentUser) return;
-
-    try {
-      let acceptedRide: any = null;
-      try {
-        const offer = await acceptDriverRequest(rideId);
-        const trip = await getRemoteTrip(offer.tripId);
-        acceptedRide = mapRemoteTripToLocal(trip);
-      } catch {
-        await acceptRide(rideId, currentUser.id.toString());
-        acceptedRide = await getRideById(rideId);
-      }
-      setActiveRide(acceptedRide as any);
-      await persist();
-      Alert.alert("Ride accepted", "Navigate to the pickup location.");
-      await loadAvailableRides();
-    } catch (error) {
-      console.error("Failed to accept ride:", error);
-      Alert.alert("Error", "Failed to accept ride");
-    }
-  };
-
-  const handleDeclineRide = (rideId: string) => {
-    setAvailableRides((prev) => prev.filter((ride) => String(ride.id) !== rideId));
-  };
-
   const handleStartRide = async (rideId: string) => {
     try {
       let updatedRide: any = null;
       try {
-        const remote = await startRemoteTrip(rideId, {
-          idempotencyKey: `start_${rideId}_${Date.now()}`,
-        });
-        updatedRide = mapRemoteTripToLocal(remote);
+        const remote = await startRemoteTrip(rideId, { pin: "" });
+        updatedRide = mapRemoteTripToLocal(remote.trip ?? remote);
       } catch {
         await startRide(rideId);
         updatedRide = await getRideById(rideId);
       }
       if (updatedRide) {
         setActiveRide(updatedRide as any);
-        await persist();
       }
       Alert.alert("Ride started", "Trip is now in progress.");
     } catch (error) {
@@ -387,7 +310,6 @@ export default function HomeScreen() {
       if (updatedRide) {
         setActiveRide(null);
         addRideToHistory(updatedRide as any);
-        await persist();
       }
       Alert.alert("Ride completed", "Trip has been completed successfully.");
     } catch (error) {
@@ -396,23 +318,15 @@ export default function HomeScreen() {
     }
   };
 
-  const today = new Date();
-  const dateLabel = today.toLocaleDateString([], {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-  const timeLabel = today.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const handleSelectSuggestedPlace = (place: (typeof POPULAR_DESTINATIONS)[0]) => {
+    router.push(
+      `/request-ride?dest=${encodeURIComponent(place.name)}&destLat=${place.lat}&destLng=${place.lng}` as never,
+    );
+  };
 
-  const gpsLabel = currentLocation
-    ? `${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`
-    : "Waiting for GPS lock";
-
-  const todayCompleted = rideHistory.filter((ride) => ride.status === "completed").length;
+  const handleOpenSearch = () => {
+    router.push("/request-ride" as never);
+  };
 
   if (!currentUser) {
     return (
@@ -433,7 +347,7 @@ export default function HomeScreen() {
           <Text style={{ textAlign: "center", color: brand.textMuted }}>
             This app only supports {IS_DRIVER_APP ? "driver" : "service seeker"} accounts.
           </Text>
-          <AppButton label="Switch Account" onPress={handleResetProfile} fullWidth={false} />
+          <AppButton label="Switch Account" onPress={() => router.push("/(auth)/onboarding")} fullWidth={false} />
         </View>
       </ScreenContainer>
     );
@@ -441,139 +355,218 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer className="bg-background" containerClassName="bg-background">
-      {/* Background Glows for Premium Feel */}
-      <View style={{ position: "absolute", top: -100, right: -50, width: 300, height: 300, borderRadius: 150, backgroundColor: "rgba(247, 115, 22, 0.08)" }} />
-      <View style={{ position: "absolute", bottom: 100, left: -100, width: 400, height: 400, borderRadius: 200, backgroundColor: "rgba(30, 64, 175, 0.05)" }} />
+      <View style={styles.mainWrapper}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* 1. Header Bar: Menu Icon, Stylized FREEOHN Logo, and Current Location */}
+          <View style={styles.headerRow}>
+            {/* Left Hamburger Icon */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push("/settings" as never)}
+              style={styles.menuButton}
+            >
+              <Ionicons name="menu" size={28} color="#0F172A" />
+            </TouchableOpacity>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-        {/* Header Section */}
-        <View style={{ marginBottom: 24 }}>
-          <Text style={{ fontSize: 32, fontWeight: "800", color: brand.text }}>Hello, {currentUser.name?.split(' ')[0] || 'User'}</Text>
-          <Text style={{ fontSize: 16, color: brand.textMuted, marginTop: 4 }}>Ready to book a ride?</Text>
-        </View>
+            {/* Center Brand Logo & Location Subtitle */}
+            <View style={styles.brandCenterContainer}>
+              <Text style={styles.brandTitleText}>FREEOHN</Text>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleOpenSearch}
+                style={styles.locationSubtitleRow}
+              >
+                <Text style={styles.locationSubtitleText} numberOfLines={1}>
+                  {currentLocationAddress}
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color="#0F172A" style={{ marginLeft: 2 }} />
+              </TouchableOpacity>
+            </View>
 
-        {/* Interactive Destination Search Card */}
-        <AppCard style={{ marginBottom: 20, padding: 14, overflow: "visible", zIndex: 50 }}>
-          <Text style={{ fontSize: 13, fontWeight: "800", color: brand.text, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Book a Ride
-          </Text>
-          <PlaceSearchInput
-            placeholder="Where to? (e.g. East Park Mall, Airport)"
-            onPlaceSelect={(place: PlaceDetails) => {
-              router.push(
-                `/request-ride?dest=${encodeURIComponent(place.formatted_address)}&destLat=${place.geometry.location.lat}&destLng=${place.geometry.location.lng}` as never
-              );
-            }}
-            userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
-            dotColor={brand.accent}
-            icon="search"
-          />
-        </AppCard>
-
-        {/* Home/Work Shortcuts */}
-        {IS_SEEKER_APP && (
-          <View style={{ flexDirection: "row", gap: 12, marginBottom: 24 }}>
-            {(['home', 'work'] as const).map((label) => {
-              const saved = savedLocations[label];
-              const icon = label === 'home' ? 'home' : 'briefcase';
-              const bg   = label === 'home' ? '#FFF7ED' : '#EFF6FF';
-              const color = label === 'home' ? brand.primary : brand.accent;
-              const chipLabel = saved ? label.charAt(0).toUpperCase() + label.slice(1) : `Add ${label}`;
-              return (
-                <TouchableOpacity
-                  key={label}
-                  onPress={() => {
-                    if (saved) {
-                      // Navigate to request-ride pre-filled with this destination
-                      router.push(`/request-ride?dest=${encodeURIComponent(saved.address)}&destLat=${saved.lat}&destLng=${saved.lng}` as never);
-                    } else {
-                      router.push('/request-ride' as never);
-                    }
-                  }}
-                  style={{ flex: 1, backgroundColor: brand.surface, borderRadius: radii.xl, padding: 16, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: brand.border, ...shadows.md }}
-                >
-                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: bg, alignItems: "center", justifyContent: "center" }}>
-                    <Ionicons name={icon as any} size={18} color={color} />
-                  </View>
-                  <Text style={{ marginLeft: 12, fontWeight: "700", color: saved ? brand.text : brand.textMuted, fontSize: 14 }}>{chipLabel}</Text>
-                </TouchableOpacity>
-              );
-            })}
+            {/* Right Placeholder for visual symmetry */}
+            <View style={{ width: 40 }} />
           </View>
-        )}
 
-        {/* Quick Actions */}
-        <View style={{ marginBottom: 32 }}>
-          <Text style={{ fontSize: 18, fontWeight: "800", color: brand.text, marginBottom: 16 }}>Quick Actions</Text>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            {[
-              { id: 'history', label: 'Receipts', icon: 'receipt', color: '#F97316', bg: '#FFF7ED', action: handleOpenRideHistory },
-              { id: 'promos', label: 'Promotions', icon: 'pricetag', color: '#22C55E', bg: '#F0FDF4', action: () => router.push('/promotions' as never) },
-              { id: 'favourites', label: 'Favourites', icon: 'heart', color: '#EF4444', bg: '#FFF1F2', action: () => router.push('/favourites' as never) },
-              { id: 'invite', label: 'Invite Friends', icon: 'person-add', color: '#8B5CF6', bg: '#F5F3FF', action: () => router.push('/invite-friends' as never) },
-            ].map((item) => (
-              <TouchableOpacity key={item.id} onPress={item.action} style={{ alignItems: "center", width: 100 }}>
-                <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: item.bg, alignItems: "center", justifyContent: "center", marginBottom: 8, ...shadows.sm }}>
-                  <Ionicons name={item.icon as any} size={28} color={item.color} />
+          {/* 2. Service Category Grid (Shops, Delivery, Navigation, Food, Games, Cargo, Rides) */}
+          <PassengerServiceGrid />
+
+          {/* 3. "Where to?" Search Pill Card */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handleOpenSearch}
+            style={styles.whereToCard}
+          >
+            <View style={styles.whereToLeft}>
+              <View style={styles.whereToCarIconContainer}>
+                <Ionicons name="car" size={24} color="#DC2626" />
+              </View>
+              <Text style={styles.whereToText}>Where to?</Text>
+            </View>
+
+            <View style={styles.whereToRightCircle}>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+
+          {/* 4. Recent / Popular Suggested Destinations */}
+          <View style={styles.destinationsContainer}>
+            {POPULAR_DESTINATIONS.map((item, idx) => (
+              <TouchableOpacity
+                key={item.id}
+                activeOpacity={0.7}
+                onPress={() => handleSelectSuggestedPlace(item)}
+                style={[
+                  styles.destinationRow,
+                  idx !== POPULAR_DESTINATIONS.length - 1 && styles.destinationDivider,
+                ]}
+              >
+                <View style={[styles.destIconContainer, { backgroundColor: item.bg }]}>
+                  <MaterialCommunityIcons name={item.icon} size={22} color={item.iconColor} />
                 </View>
-                <Text style={{ fontSize: 12, fontWeight: "600", color: brand.textMuted, textAlign: "center" }}>{item.label}</Text>
+                <View style={styles.destInfoColumn}>
+                  <Text style={styles.destTitleText} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.destAddressText} numberOfLines={1}>
+                    {item.address}
+                  </Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
 
-        {/* Referral Card */}
-        <AppCard tone="primary" style={{ overflow: "hidden", padding: 0 }}>
-          <View style={{ padding: 20, flex: 1 }}>
-            <Text style={{ fontSize: 20, fontWeight: "800", color: brand.text }}>Earn Free Rides!</Text>
-            <Text style={{ fontSize: 14, color: brand.textMuted, marginTop: 8, marginBottom: 16, lineHeight: 20 }}>
-              Refer friends and get free rides together. Share your referral code now!
-            </Text>
-            <AppButton 
-              label="Invite Friends" 
-              fullWidth={false} 
-              size="sm" 
-              onPress={() => {}} 
-              style={{ paddingHorizontal: 24, borderRadius: radii.md }} 
-            />
-          </View>
-          <View style={{ position: "absolute", right: -20, bottom: -10, width: 150, height: 120 }}>
-             <Ionicons name="people" size={120} color="rgba(247, 115, 22, 0.1)" />
-          </View>
-        </AppCard>
+          {/* 5. Promotional Banners & Food Specials */}
+          <PassengerPromoBanners />
+        </ScrollView>
 
-        {/* Live Interactive Map Preview */}
-        <View style={{ marginTop: 24, borderRadius: radii.xl, overflow: "hidden", borderWidth: 1, borderColor: brand.border, ...shadows.md }}>
-          <View style={{ padding: 14, backgroundColor: brand.surface, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <View>
-              <Text style={{ fontSize: 16, fontWeight: "800", color: brand.text }}>Nearby Drivers & Map</Text>
-              <Text style={{ fontSize: 12, color: brand.textMuted, marginTop: 2 }}>
-                {nearbyDrivers.length > 0 ? `${nearbyDrivers.length} drivers active nearby` : "Tap map to choose pickup or destination"}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={handleRequestRide}
-              style={{ backgroundColor: brand.primary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: radii.md }}
-            >
-              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 12 }}>Open Booking</Text>
-            </TouchableOpacity>
-          </View>
-          <RideMap
-            userLocation={currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined}
-            nearbyDrivers={nearbyDrivers}
-            interactivePlaceSelection={true}
-            showControls={true}
-            onPickupSelect={(loc) => {
-              router.push(`/request-ride?pickupLat=${loc.lat}&pickupLng=${loc.lng}` as never);
-            }}
-            onDropoffSelect={(loc) => {
-              router.push(`/request-ride?destLat=${loc.lat}&destLng=${loc.lng}` as never);
-            }}
-            style={{ height: 280 }}
-          />
-        </View>
-      </ScrollView>
-      {IS_DRIVER_APP ? <DriverNavBar /> : <PassengerNavBar />}
+        {/* 6. Standard 5-tab Bottom Navigation */}
+        {IS_DRIVER_APP ? <DriverNavBar /> : <PassengerNavBar />}
+      </View>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  mainWrapper: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    paddingTop: 4,
+  },
+  menuButton: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "flex-start",
+  },
+  brandCenterContainer: {
+    alignItems: "center",
+    flex: 1,
+  },
+  brandTitleText: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: "#EA580C", // Vibrant Yango/Freeohn brand red-orange
+    fontStyle: "italic",
+    letterSpacing: -0.5,
+  },
+  locationSubtitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+    maxWidth: 240,
+  },
+  locationSubtitleText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  whereToCard: {
+    backgroundColor: "#F1F5F9",
+    borderRadius: 24,
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  whereToLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  whereToCarIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  whereToText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  whereToRightCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#0F172A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  destinationsContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  destinationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  destinationDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  destIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  destInfoColumn: {
+    flex: 1,
+  },
+  destTitleText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 2,
+  },
+  destAddressText: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+  },
+});
